@@ -604,20 +604,23 @@
         text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
       }
       .choice-close { margin-top: 10px; }
-      /* ---------- mode choice popup (after START, before the first
-         tower picker): the supplied poster art
-         (assets/mode-select.webp) IS the whole screen. The two mode
-         plaques in the art are blank, so the buttons are real text
-         sitting on them, positioned by percentage of the poster box
-         so they scale with it. The popup lives at body level (NOT
-         inside .stage): .stagebox has container-type: size, which
-         would trap position: fixed inside the fixed-ratio stage, so
-         the popup is fixed to the viewport itself — 100vw x 100dvh,
-         image stretched with object-fit: fill so there are no bands
-         on any side and nothing is cropped. The stretch is only a
-         few percent on a phone and invisible on this cartoon art;
-         because fill never crops, the hotspot %s are still image %s
-         and the tap zones stay aligned with the drawn plaques. ---------- */
+      /* ---------- mode choice popup (the first thing the player
+         sees, after the loading screen — the start page is retired):
+         the supplied poster art (assets/mode-select.webp) IS the
+         whole screen. The two mode plaques in the art are blank, so
+         the buttons are real text sitting on them. The popup lives
+         at body level (NOT inside .stage): .stagebox has
+         container-type: size, which would trap position: fixed
+         inside the fixed-ratio stage, so the popup is fixed to the
+         viewport itself — 100vw x 100dvh — and the image is
+         object-fit: cover, object-position: top, so the art keeps
+         its proportions and fills the screen on any phone, with any
+         cropping coming off the bottom (pumpkins/kids), never the
+         title or the buttons. Because cover crops, the hotspot %s
+         are NOT container %s any more: layoutModeOverlay() in
+         game.js positions the buttons (and Dracula's bubble) from
+         the displayed image rect, so the tap zones stay on the
+         drawn plaques on every screen ratio. ---------- */
       .modechoice {
         position: fixed;
         inset: 0;
@@ -637,7 +640,7 @@
         max-width: none;
       }
       .mode-poster img {
-        display: block; width: 100%; height: 100%; object-fit: fill;
+        display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center;
       }
       /* visible text buttons on the blank plaques: the icons take the
          left ~30% of each plaque (castle right edge 33.6%, infinity
@@ -1201,15 +1204,23 @@
         0%, 100% { transform: rotate(-2.5deg) translateY(0); }
         50% { transform: rotate(-1.5deg) translateY(-4px); }
       }
-      /* ---------- Dracula's speech bubble: NOT there when the page
-         first paints. Once the start page has loaded and is on
-         screen, the bootstrap script adds .show: the bubble grows in
+      /* ---------- Dracula's speech bubble: it lives on the mode
+         poster now (the start page is retired). NOT there when the
+         page first paints: showModeChoice() in game.js adds .show a
+         beat after the mode screen opens, and the bubble grows in
          from nothing at its tail by his head, then the words fade in
-         one by one; afterwards it bobs very gently ---------- */
+         one by one; afterwards it bobs very gently. The left/top/
+         width below are image fractions (the fallback before JS
+         measures the displayed rect): top 20.5% clears the painted
+         title, which ends around 19%, and the bubble sits above the
+         gold plaque, its tail pointing down-right at Dracula.
+         layoutModeOverlay() overrides these with pixels from the
+         displayed image rect, so the bubble stays put on every
+         screen ratio. ---------- */
       .dracula-bubble {
         position: absolute;
         left: 3%;
-        top: 17.5%;
+        top: 20.5%;
         width: 58%;
         max-width: 290px;
         z-index: 3;
@@ -1526,7 +1537,7 @@
          full poster +20%, game code +30%, game font +20%, engine
          initialised +20%) and the number only ever advances when
          one of those events actually fires. When it reaches 100%
-         the screen fades and the title card underneath takes over -->
+         the screen fades and the mode poster takes over -->
     <div class="bootload" id="bootload" role="status" aria-label="Loading the game">
       <div class="boot-inner">
         <div class="boot-moon" aria-hidden="true"></div>
@@ -1579,7 +1590,16 @@
             finishStarted = true;
             shown = 100;
             render();
-            setTimeout(function () { box.classList.add('gone'); gone = true; }, 380);
+            setTimeout(function () {
+              box.classList.add('gone'); gone = true;
+              /* no start page any more: entering the game is
+                 automatic — the mode poster is the first thing the
+                 player sees. If the engine is already booted,
+                 __tdEnter runs at once; if it is still on its way,
+                 the pending flag is honoured the moment it boots. */
+              if (window.__tdEnter) window.__tdEnter();
+              else window.__tdPendingEnter = true;
+            }, 380);
           }
           requestAnimationFrame(tick);
         }
@@ -1603,23 +1623,12 @@
          player's tap anywhere on it is the gesture that unlocks
          audio, so the start page's music begins on its own the
          moment this card fades away -->
-    <div class="presplash" id="presplash" role="button" tabindex="0" aria-label="Trick or Treaters! Tap anywhere to continue">
-      <div class="pre-inner">
-        <div class="pre-moon" aria-hidden="true"></div>
-        <p class="pre-title"><span class="l1">TRICK OR</span><span class="l2">TREATERS!</span></p>
-        <p class="pre-hint">TAP ANYWHERE TO CONTINUE</p>
-      </div>
-    </div>
-    <script>window.__tdPreUp = true; /* the title card is up: hold Dracula's bubble until it is dismissed */</script>
-    <!-- splash / start page: the cover art with the game title on top;
-         its START button drops straight into the game -->
-    <div class="splash" id="splash">
+    <!-- start page RETIRED 2026-11-06: after the loading screen the game goes straight to the mode poster — no splash page, no START click. The markup stays (starting hidden): the cover img still loads, driving the boot art stages, and the visitor badge still counts; the bootstrap scripts below still find their elements. -->
+    <div class="splash gone" id="splash">
       <div class="splash-inner">
         <div class="cover">
           <img class="cover-low" src="assets/splash-cover-2-low.webp" data-full="assets/splash-cover-2.webp" width="940" height="1673" fetchpriority="high" alt="Outside a Halloween castle, Count Dracula leads Frankenstein, a ghost, a witch, a mummy and a black cat against trick-or-treat kids carrying pumpkin buckets" onerror="if(!this.dataset.fbk){this.dataset.fbk=1;this.classList.remove('cover-low');this.src='assets/splash-cover.jpg';}" />
           <h1 class="game-title"><span class="t-or">TRICK OR</span><span class="t-def">DEFEND!</span></h1>
-          <div class="dracula-bubble" role="note" aria-label="Count Dracula says: I despise those pesky trick-or-treaters! Minions, keep them away from my castle!"><svg class="bubble-shape" viewBox="0 0 300 118" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M 17 2 H 283 Q 298 2 298 17 V 87 Q 298 102 283 102 H 244 L 233.5 113.5 Q 232 116.2 230.5 113.5 L 220 102 H 17 Q 2 102 2 87 V 17 Q 2 2 17 2 Z" fill="rgba(255, 246, 224, .78)" stroke="#2b1050" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg><span class="w" style="--d:.55s">I</span> <span class="w" style="--d:.62s">despise</span> <span class="w" style="--d:.69s">those</span> <span class="w" style="--d:.76s">pesky</span> <span class="w" style="--d:.83s">trick-or-treaters!</span> <span class="w" style="--d:.97s">Minions,</span> <span class="w" style="--d:1.04s">keep</span> <span class="w" style="--d:1.11s">them</span> <span class="w" style="--d:1.18s">away</span> <span class="w" style="--d:1.25s">from</span> <span class="w" style="--d:1.32s">my</span> <span class="w" style="--d:1.39s">castle!</span></div>
-          <button class="btn primary start" id="btnEnter" type="button">START</button>
           <div class="visitor-badge" id="visitorBadge"><img src="https://visitor-badge.laobi.icu/badge?page_id=td-halloween-space5-2026" alt="" onerror="var p=document.getElementById('visitorBadge'); if(p) p.style.display='none';" /></div>
         </div>
       </div>
@@ -1747,24 +1756,10 @@
         }
         window.__tdStartSplashMusic = start;
         window.__tdStopSplashMusic = stop;
-        function kick() {
-          var sp = document.getElementById('splash');
-          if (!sp || sp.classList.contains('gone')) return;
-          start();
-          // a context created before this gesture may still be
-          // suspended: resume it now, inside the gesture, where
-          // mobile browsers allow the unlock
-          if (ac && ac.state !== 'running' && ac.resume) ac.resume();
-          // if the automatic screen-off recovery was refused
-          // earlier, this touch is the fallback: finish it now,
-          // inside the gesture (recover is defined below; hoisted)
-          if (splRecoveryPending) recover();
-        }
-        document.addEventListener('pointerdown', kick);
-        document.addEventListener('touchstart', kick, { passive: true });
-        document.addEventListener('click', kick);
-        document.addEventListener('keydown', kick);
-        start(); // autoplay attempt: plays at once where the webview allows sound
+        /* no start page any more (retired 2026-11-06), so the dance
+           never auto-starts and no gesture wakes it: the mode poster
+           is silent until a mode is picked and the game music takes
+           over. start/stop stay defined for the engine hand-off. */
         /* ---------- screen-off recovery for THIS page's music ----------
            Same failure as the game's audio, same cure: when the
            phone screen turns off, the browser parks this context
@@ -1829,41 +1824,10 @@
         window.addEventListener('pageshow', recover);
         window.addEventListener('focus', recover);
       })();
-      (function () {
-        var btn = document.getElementById('btnEnter');
-        if (!btn) return;
-        btn.addEventListener('click', function () {
-          window.__tdLoadGameFont(); // entering the game: now fetch the game font
-          if (window.__tdStopSplashMusic) window.__tdStopSplashMusic(); // the splash dance ends here…
-          if (window.__tdEnter) { window.__tdEnter(); return; }
-          window.__tdPendingEnter = true;
-          document.getElementById('splash').classList.add('gone');
-        });
-      })();
-      /* Dracula's bubble must NOT sit on the poster from the start.
-         Only once the cover art has actually loaded and the start
-         page is displayed does the bubble grow in from nothing (the
-         .show class starts the pop), with his words following one by
-         one. The window load event and a plain timer are backstops,
-         so he always gets his line out even if the image stalls. */
-      (function () {
-        var bubble = document.querySelector('.dracula-bubble');
-        if (!bubble) return;
-        var img = document.querySelector('.cover img');
-        var shown = false;
-        function show() {
-          if (shown) return;
-          if (window.__tdPreUp) { setTimeout(show, 300); return; }
-          shown = true;
-          requestAnimationFrame(function () {
-            setTimeout(function () { bubble.classList.add('show'); }, 300);
-          });
-        }
-        if (img && img.complete && img.naturalWidth > 0) show();
-        else if (img) img.addEventListener('load', show);
-        window.addEventListener('load', show);
-        setTimeout(show, 2600);
-      })();
+      /* the START button and the cover-gated bubble show are gone
+         with the start page (retired 2026-11-06): the bubble now
+         lives on the mode poster, and showModeChoice() in game.js
+         pops it in when the mode screen opens. */
       /* progressive cover: the poster starts as the tiny low-res WebP
          (a few KB — on screen almost instantly, softened by the
          .cover-low blur). Once the splash has painted, the
@@ -1934,31 +1898,6 @@
         img.addEventListener('error', function () { setTimeout(repair, 600); arm(1600); });
         window.addEventListener('load', function () { setTimeout(repair, 300); arm(1200); });
         arm(1800);
-      })();
-    </script>
-    <script>
-      /* pre-splash wiring: the first tap (or key press) anywhere on
-         the title card dismisses it and — because the splash music's
-         start runs inside this very gesture — the browser unlocks
-         audio, so the cheerful skeleton dance is already playing
-         when the START page fades in, with no second tap needed.
-         The card keeps intercepting taps until its fade finishes,
-         so the trailing click of the same tap cannot fall through
-         and hit START underneath. */
-      (function () {
-        var pre = document.getElementById('presplash');
-        if (!pre) { window.__tdPreUp = false; return; }
-        var done = false;
-        function go() {
-          if (done) return;
-          done = true;
-          window.__tdPreUp = false;
-          if (window.__tdStartSplashMusic) window.__tdStartSplashMusic();
-          pre.classList.add('gone');
-        }
-        pre.addEventListener('pointerdown', go);
-        pre.addEventListener('click', go);
-        document.addEventListener('keydown', function () { if (!done) go(); });
       })();
     </script>
     <script>
@@ -2036,16 +1975,15 @@
       </div>
       <script>
         /* speed button first-entry hint: the moment the player
-           enters the game for the first time (the splash gains
-           .gone — via the engine's __tdEnter or the splash
-           bootstrap's own fallback), the speed button blinks three
+           enters the game for the first time (a mode is picked and
+           the mode poster goes away), the speed button blinks three
            times, a little brighter than its resting breathing glow,
            then settles back to breathing. One shot only: later
            re-entries and restarts never re-trigger it. */
         (function () {
           var btn = document.getElementById('btnSpeed');
-          var splash = document.getElementById('splash');
-          if (!btn || !splash) return;
+          var mc = document.getElementById('modeChoice');
+          if (!btn || !mc) return;
           var done = false;
           function flash() {
             if (done) return;
@@ -2053,15 +1991,17 @@
             btn.classList.add('speed-intro');
             setTimeout(function () { btn.classList.remove('speed-intro'); }, 1800);
           }
-          if (splash.classList.contains('gone')) { flash(); return; }
+          /* the mode poster is the first thing the player sees now
+             (the start page is retired): flash the first time a
+             mode is picked and the game proper begins. */
           if ('MutationObserver' in window) {
             var mo = new MutationObserver(function () {
-              if (splash.classList.contains('gone')) {
+              if (!mc.classList.contains('show')) {
                 mo.disconnect();
                 setTimeout(flash, 250);
               }
             });
-            mo.observe(splash, { attributes: true, attributeFilter: ['class'] });
+            mo.observe(mc, { attributes: true, attributeFilter: ['class'] });
           }
         })();
       </script>
@@ -2146,6 +2086,7 @@
     <div class="choice modechoice" id="modeChoice" aria-hidden="true">
       <div class="mode-poster">
         <img src="assets/mode-select.webp" width="940" height="1673" decoding="async" alt="Trick or Defend! Choose your mode" />
+        <div class="dracula-bubble" role="note" aria-label="Count Dracula says: I despise those pesky trick-or-treaters! Minions, keep them away from my castle!"><svg class="bubble-shape" viewBox="0 0 300 118" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M 17 2 H 283 Q 298 2 298 17 V 87 Q 298 102 283 102 H 244 L 233.5 113.5 Q 232 116.2 230.5 113.5 L 220 102 H 17 Q 2 102 2 87 V 17 Q 2 2 17 2 Z" fill="rgba(255, 246, 224, .78)" stroke="#2b1050" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg><span class="w" style="--d:.55s">I</span> <span class="w" style="--d:.62s">despise</span> <span class="w" style="--d:.69s">those</span> <span class="w" style="--d:.76s">pesky</span> <span class="w" style="--d:.83s">trick-or-treaters!</span> <span class="w" style="--d:.97s">Minions,</span> <span class="w" style="--d:1.04s">keep</span> <span class="w" style="--d:1.11s">them</span> <span class="w" style="--d:1.18s">away</span> <span class="w" style="--d:1.25s">from</span> <span class="w" style="--d:1.32s">my</span> <span class="w" style="--d:1.39s">castle!</span></div>
         <button class="mode-hot mode-hot-challenge" id="btnModeChallenge" type="button" aria-label="闯关模式：10 waves, hold the castle, then victory"><span class="mode-hot-t">闯关模式</span><span class="mode-hot-s">10 waves — hold the castle, then victory!</span></button>
         <button class="mode-hot mode-hot-endless" id="btnModeEndless" type="button" aria-label="无限流模式：endless waves, how long can you last"><span class="mode-hot-t">无限流模式</span><span class="mode-hot-s">Endless waves — how long can you last?</span></button>
       </div>
@@ -2204,12 +2145,12 @@
     </script>
     <script>
       /* the game engine now lives in its own file, assets/game.js,
-         and is fetched in the background only AFTER the splash has
-         painted - so this start page appears almost immediately
-         instead of waiting for the whole engine to download first.
-         A START tap that lands before the engine arrives is still
-         remembered by the splash bootstrap above and honoured the
-         moment the engine boots. */
+         and is fetched in the background only AFTER the first paint
+         — so the loading screen appears almost immediately instead
+         of waiting for the whole engine to download first. The
+         engine's entry (__tdEnter) fires automatically when the
+         boot finishes; if a load is still in flight then, the
+         pending flag is honoured the moment it boots. */
       (function () {
         var kicked = false;
         var attempts = 0;
@@ -2282,12 +2223,12 @@
          (game.js). If the engine file never arrives — flaky network,
          exhausted retries, a stalled download that fires neither load
          nor error — the player lands on a bare field with a dead Start
-         button and no clue. (The how-to overlay was removed 2026-10-29;
-         START on the splash now drops straight into the game.) This
-         self-contained watcher (no engine needed) notices: once the
-         splash is dismissed, if __tdEnter still isn't there after a
-         few seconds, it turns the top Start button into a visible
-         retry instead of a dead end. */
+         button and no clue. (The start page was removed 2026-11-06;
+         the splash starts hidden, so the watch below starts at load
+         instead of at splash dismissal.) This self-contained watcher
+         (no engine needed) notices: if __tdEnter still isn't there a
+         few seconds after load, it turns the top Start button into a
+         visible retry instead of a dead end. */
       (function () {
         var splash = document.getElementById('splash');
         var stage = document.getElementById('stage');
