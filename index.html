@@ -609,34 +609,48 @@
          (assets/mode-select.webp) IS the whole screen. The two mode
          plaques in the art are blank, so the buttons are real text
          sitting on them, positioned by percentage of the poster box
-         so they scale with it. The poster keeps its own 940:1673
-         ratio and fills the stage height (the stage is always wider
-         than the poster, so the wrapper is exactly the displayed
-         image box and the hotspot %s are image %s); the stage's dark
-         purple shows through the side pillars. ---------- */
+         so they scale with it. The popup lives at body level (NOT
+         inside .stage): .stagebox has container-type: size, which
+         would trap position: fixed inside the fixed-ratio stage, so
+         the popup is fixed to the viewport itself — 100vw x 100dvh,
+         image stretched with object-fit: fill so there are no bands
+         on any side and nothing is cropped. The stretch is only a
+         few percent on a phone and invisible on this cartoon art;
+         because fill never crops, the hotspot %s are still image %s
+         and the tap zones stay aligned with the drawn plaques. ---------- */
       .modechoice {
+        position: fixed;
+        inset: 0;
         left: 0; top: 0;
-        width: 100%; max-width: none; height: 100%;
+        width: 100vw; max-width: none; height: 100vh; height: 100dvh;
         transform: none;
+        z-index: 60;
+        background: #241453;
         display: flex; align-items: center; justify-content: center;
       }
       .modechoice.show { transform: none; }
       .mode-poster {
         position: relative;
+        width: 100%;
         height: 100%;
-        aspect-ratio: 940 / 1673;
-        max-width: 100%;
+        aspect-ratio: auto;
+        max-width: none;
       }
       .mode-poster img {
-        display: block; width: 100%; height: 100%; object-fit: contain;
+        display: block; width: 100%; height: 100%; object-fit: fill;
       }
       /* visible text buttons on the blank plaques: the icons take the
-         left ~25% of each plaque, so the text is padded right of them
-         and centred in the remaining space */
+         left ~30% of each plaque (castle right edge 33.6%, infinity
+         right edge 30.7% of plaque width, measured on the art), so
+         the text is padded right of them and centred in the
+         remaining space. Subtitle is one line, never wraps: 11px
+         max, shrinking with the viewport on narrow phones so it
+         always fits (measured in the real game font, Baloo 2 bold:
+         longest subtitle 198px at 11px, 162px at 9px) */
       .mode-hot {
         position: absolute;
         background: transparent; border: 0; margin: 0;
-        padding: 0 4% 0 26%;
+        padding: 0 3% 0 24%;
         display: flex; flex-direction: column;
         align-items: center; justify-content: center; gap: 2px;
         cursor: pointer;
@@ -646,31 +660,29 @@
       .mode-hot:active { filter: brightness(1.12); }
       .mode-hot:focus-visible { outline: 3px solid #ffd23e; outline-offset: 2px; }
       .mode-hot-t { font-size: 30px; font-weight: 900; line-height: 1.1; white-space: nowrap; }
-      .mode-hot-s { font-size: 12px; font-weight: 700; line-height: 1.35; }
+      .mode-hot-s { font-size: 11px; font-size: clamp(9px, 2.55vw, 11px); font-weight: 700; line-height: 1.35; white-space: nowrap; }
       /* gold plaque: dark brown text with a soft light shadow */
       .mode-hot-challenge .mode-hot-t { color: #3d2208; text-shadow: 0 1px 0 rgba(255, 236, 180, .85), 0 2px 6px rgba(255, 200, 80, .45); }
       .mode-hot-challenge .mode-hot-s { color: #4a2c10; text-shadow: 0 1px 0 rgba(255, 236, 180, .7); }
       /* purple plaque: white text with a soft dark shadow */
       .mode-hot-endless .mode-hot-t { color: #fff; text-shadow: 0 1px 3px rgba(20, 0, 60, .85), 0 0 12px rgba(140, 80, 255, .55); }
       .mode-hot-endless .mode-hot-s { color: #f2e9ff; text-shadow: 0 1px 3px rgba(20, 0, 60, .85); }
-      /* hotspot rects, % of the 940x1673 poster: the two drawn buttons
-         meet at the bat divider near y 63%; the split is at 63.2% so a
-         tap on the divider goes to endless, with no gap or overlap */
-      .mode-hot-challenge { left: 8.9%; top: 50.1%; width: 81.5%; height: 12.7%; }
-      .mode-hot-endless { left: 9.0%; top: 63.2%; width: 81.4%; height: 12.6%; }
+      /* hotspot rects, % of the 940x1673 poster (re-measured for the
+         new render, whose plaques sit slightly lower): the two drawn
+         plaques overlap slightly around the bat divider at y 63.5-64.5%;
+         the split is at 64.0% so a tap on the divider goes to endless,
+         with no gap or overlap between the zones */
+      .mode-hot-challenge { left: 9.0%; top: 51.0%; width: 81.0%; height: 13.0%; }
+      .mode-hot-endless { left: 9.0%; top: 64.0%; width: 81.5%; height: 12.5%; }
       /* ---------- full-bleed mode screen: while the mode popup is
-         open the top button bar goes away and the stage loses its
-         frame, so the poster reads as one full-screen page, not a
-         box on a page. The body class is added by showModeChoice()
-         in game.js and removed by chooseMode(); the bar is untouched
-         before the mode screen opens (Start Game is how the player
-         gets there) and comes back the moment a mode is picked.
-         The poster itself stays contained at 940:1673 (title and
-         both buttons fully visible, never cropped); the side
-         pillars are the stage's dark purple #241453, sampled to
-         match the poster's own dark-purple edges, and the body
-         background flattens to the same colour so there are no
-         light margins anywhere. ---------- */
+         open the top button bar goes away. The body class is added
+         by showModeChoice() in game.js and removed by chooseMode();
+         the bar is untouched before the mode screen opens (Start
+         Game is how the player gets there) and comes back the
+         moment a mode is picked. The poster itself is fixed to the
+         viewport (see the .modechoice rules above), so the stage
+         frame / page padding rules below are only belt-and-braces
+         for whatever sits behind the overlay. ---------- */
       body.mode-open .controls { display: none; }
       body.mode-open .screen { padding-top: 0; gap: 0; }
       body.mode-open .wrap { padding: 0; max-width: none; }
@@ -2091,13 +2103,6 @@
           <div class="choice-grid" id="choiceGrid"></div>
           <button class="btn choice-close" id="btnChoiceClose" type="button" style="display:none">Later</button>
         </div>
-        <div class="choice modechoice" id="modeChoice" aria-hidden="true">
-          <div class="mode-poster">
-            <img src="assets/mode-select.webp" width="940" height="1673" decoding="async" alt="Trick or Defend! Choose your mode" />
-            <button class="mode-hot mode-hot-challenge" id="btnModeChallenge" type="button" aria-label="闯关模式：10 waves, hold the castle, then victory"><span class="mode-hot-t">闯关模式</span><span class="mode-hot-s">10 waves — hold the castle, then victory!</span></button>
-            <button class="mode-hot mode-hot-endless" id="btnModeEndless" type="button" aria-label="无限流模式：endless waves, how long can you last"><span class="mode-hot-t">无限流模式</span><span class="mode-hot-s">Endless waves — how long can you last?</span></button>
-          </div>
-        </div>
         <div class="battlereport" id="battleReport" aria-hidden="true" role="dialog" aria-label="Defeat report">
           <div class="br-card">
             <img class="br-art" src="assets/defeat-report.webp" width="1086" height="1448" decoding="async" alt="" />
@@ -2133,6 +2138,18 @@
       </div>
 
     </main>
+
+    <!-- mode choice popup lives at body level, not inside .stage:
+         .stagebox has container-type: size, which would trap
+         position: fixed inside the fixed-ratio stage; fixed to the
+         viewport here it covers the whole visible game area. -->
+    <div class="choice modechoice" id="modeChoice" aria-hidden="true">
+      <div class="mode-poster">
+        <img src="assets/mode-select.webp" width="940" height="1673" decoding="async" alt="Trick or Defend! Choose your mode" />
+        <button class="mode-hot mode-hot-challenge" id="btnModeChallenge" type="button" aria-label="闯关模式：10 waves, hold the castle, then victory"><span class="mode-hot-t">闯关模式</span><span class="mode-hot-s">10 waves — hold the castle, then victory!</span></button>
+        <button class="mode-hot mode-hot-endless" id="btnModeEndless" type="button" aria-label="无限流模式：endless waves, how long can you last"><span class="mode-hot-t">无限流模式</span><span class="mode-hot-s">Endless waves — how long can you last?</span></button>
+      </div>
+    </div>
 
     <script>
       /* victory group photo safety net: the photo is fetched once
