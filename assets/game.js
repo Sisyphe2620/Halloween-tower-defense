@@ -3191,6 +3191,16 @@
                   life: VORT_LIFE[lvI], src: tw, seed: Math.random(), storm: isStorm
                 });
               });
+              // Lv3 sandstorm balance (2026-11-06): at Lv3 every
+              // attack is a storm, and the normal interval (1.75s
+              // base x 0.85^2 = ~1.26s) fired the ultimate far too
+              // often — the Lv3 mummy now waits twice its normal
+              // interval between storms (~2.53s; ~1.94s under a
+              // howl buff). Power is untouched: radius 85, DPS 13,
+              // slow 0.5, blowback 30px/s, two storms, same
+              // lifetime and chase speed. Lv1/Lv2 vortexes keep
+              // the normal interval.
+              if (tw.level === 3) tw.cd = fireRate(tw, lvI) * 2;
             } else if (tw.proj === 'pile') {
               // skeleton: lobs a heap of bones onto the road at the
               // furthest kid in range — at most two piles per tower,
@@ -7098,26 +7108,31 @@
        cover, object-position: top, so on any screen whose ratio
        differs from the poster's 940:1673 the displayed image rect
        is NOT the container rect (tall screens crop the sides,
-       short screens crop the bottom). The two mode buttons and
-       Dracula's bubble are positioned from the DISPLAYED rect,
-       computed here from the container size and the poster's
-       natural size — so the tap zones stay on the drawn plaques
-       and the bubble stays beside Dracula's head on every phone.
+       short screens crop the bottom). The two mode buttons,
+       Dracula's bubble and the title glow are positioned from the
+       DISPLAYED rect, computed here from the container size and
+       the poster's natural size — so the tap zones stay on the
+       drawn plaques, the bubble stays beside Dracula's head and
+       the glow stays over the title on every phone.
        Plaque fractions are the re-measured values for the current
        render (gold x .090–.900, y .510–.645; purple x .090–.905,
        y .635–.765; the zones meet at the .640 split). The bubble
        sits at image fractions left .02, top .205, width .35 —
        measured on the art itself (title ends ~.197; Dracula's head
-       x .378–.598, y .233–.336, face x .395–.600, y .265–.335;
-       Frankenstein's head starts y .320): the old .58-wide bubble
-       at top .205 covered Dracula's face. The narrow bubble stays
-       left of his head and above Frankenstein's, clear of the
-       title and the gold plaque (starts .51); its tail (tip at
-       ~92.5% of its width) points down at him from just left of
-       his hair. On tall screens the poster's sides are cropped, so
-       the bubble's right edge is ALSO capped at image x .37 (the
+       x .378–.598, y .233–.336, face x .403–.597, y .260–.337
+       re-measured 2026-11-06; Frankenstein's head starts y .320):
+       the old .58-wide bubble at top .205 covered Dracula's face.
+       The narrow bubble stays left of his head and above
+       Frankenstein's, clear of the title and the gold plaque
+       (starts .51); its tail lives on the bubble's RIGHT edge at
+       ~70% of its height, tip ~10px right of the bubble, just
+       left of his hair at face height, pointing right at his
+       face (the old bottom-edge tail pointed down at his hand).
+       On tall screens the poster's sides are cropped, so the
+       bubble's right edge is ALSO capped at image x .37 (the
        bubble shrinks, and its font with it) — the plain left-edge
-       clamp alone would shove it right over his face. */
+       clamp alone would shove it right over his face, and the cap
+       is what keeps the right-side tail tip short of his face. */
     var MODE_POSTER_W = 940, MODE_POSTER_H = 1673;
     function layoutModeOverlay() {
       var poster = document.querySelector('.mode-poster');
@@ -7139,6 +7154,11 @@
       }
       place(document.getElementById('btnModeChallenge'), 0.090, 0.510, 0.900, 0.640);
       place(document.getElementById('btnModeEndless'), 0.090, 0.640, 0.905, 0.765);
+      // the title glow breathes over "TRICK OR DEFEND!" (measured
+      // title rect x .192–.805, y .055–.197): same fraction-based
+      // placement from the displayed rect, so it tracks the title
+      // even where tall phones crop the poster's sides
+      place(poster.querySelector('.title-glow'), 0.192, 0.055, 0.805, 0.197);
       var bub = poster.querySelector('.dracula-bubble');
       if (bub) {
         var bw = Math.min(0.35 * dw, 290);
