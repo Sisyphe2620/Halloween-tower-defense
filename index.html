@@ -118,6 +118,10 @@
         user-select: none;
       }
       .btn:active { transform: scale(.96); }
+      /* .btn sets display:inline-flex, which beats the hidden
+         attribute's UA rule — so the PICK! button needs its own
+         [hidden] rule to actually disappear when no pick waits */
+      #btnPick[hidden] { display: none; }
       .btn.primary {
         background: linear-gradient(180deg, #ffb03a, #ff8a1e);
         border-color: #ffc46b;
@@ -596,6 +600,23 @@
       /* with five cards the last one centres itself in the second
          row; with six (or any full rows) they simply fill the grid */
       .choice-grid .card:last-child:nth-child(5) { grid-column: 2; }
+      /* pick-mode subtitle + Later button (hidden on the free
+         first tower, which cannot be skipped) */
+      .choice-sub {
+        font-size: 13px; font-weight: 600; color: var(--ink-dim);
+        margin: -4px 8px 10px; line-height: 1.45;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+      }
+      .choice-close { margin-top: 10px; }
+      /* ---------- mode choice popup (after START, before the first
+         tower picker): two big stacked buttons, same floating
+         style as the tower choice ---------- */
+      .mode-grid { display: flex; flex-direction: column; gap: 10px; }
+      .mode-btn {
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
+        font-size: 21px; font-weight: 900; padding: 14px 12px; line-height: 1.2;
+      }
+      .mode-btn span { font-size: 13px; font-weight: 600; opacity: .85; }
       /* ---------- tower upgrade panel (tap a tower wearing LV UP!) ---------- */
       .upanel {
         position: absolute;
@@ -1942,6 +1963,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
           Restart
         </button>
+        <button class="btn primary" id="btnPick" type="button" hidden>PICK!</button>
         <span class="spacer"></span>
         <button class="btn on" id="btnSound" type="button" aria-pressed="true">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9c1.2 1.6 1.2 4.4 0 6M18.5 6.5c2.4 3.2 2.4 7.8 0 11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
@@ -2014,15 +2036,15 @@
         <button class="btn primary playagain" id="btnPlayAgain" type="button" aria-hidden="true">NEXT NIGHT</button>
         <div class="choice" id="towerChoice" aria-hidden="true">
           <div class="choice-t" id="choiceTitle">Choose Your Defense Monster</div>
+          <div class="choice-sub" id="choiceSub" style="display:none">Tap a card, then tap one of that monster on the field to upgrade it — or a gravestone to place another!</div>
           <div class="choice-grid" id="choiceGrid"></div>
+          <button class="btn choice-close" id="btnChoiceClose" type="button" style="display:none">Later</button>
         </div>
-        <div class="upanel" id="upPanel" aria-hidden="true">
-          <div class="up-t" id="upTitle">Franken Tower</div>
-          <div class="up-lv" id="upLv"></div>
-          <div class="up-stats" id="upStats"></div>
-          <div class="up-btns">
-            <button class="btn primary" id="btnUpgrade" type="button">Upgrade!</button>
-            <button class="btn" id="btnUpLater" type="button">Later</button>
+        <div class="choice modechoice" id="modeChoice" aria-hidden="true">
+          <div class="choice-t">Choose Your Mode</div>
+          <div class="mode-grid">
+            <button class="btn primary mode-btn" id="btnModeChallenge" type="button">闯关模式<span>10 waves — hold the castle, then victory!</span></button>
+            <button class="btn primary mode-btn" id="btnModeEndless" type="button">无限流模式<span>Endless waves — how long can you last?</span></button>
           </div>
         </div>
         <div class="battlereport" id="battleReport" aria-hidden="true" role="dialog" aria-label="Defeat report">
