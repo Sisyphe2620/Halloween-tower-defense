@@ -619,6 +619,8 @@
         text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
       }
       .choice-close { margin-top: 10px; }
+      /* fuse popup: same floating panel as the picker, two stacked buttons */
+      #fuseChoice .btn { display: block; margin: 10px auto 0; min-width: 200px; text-align: center; }
       /* ---------- mode choice popup (the first thing the player
          sees, after the loading screen — the start page is retired):
          the supplied poster art (assets/mode-select.webp) IS the
@@ -2177,6 +2179,12 @@
           <div class="choice-sub" id="choiceSub" style="display:none">Tap a card, then tap one of that monster on the field to upgrade it — or a gravestone to place another!</div>
           <div class="choice-grid" id="choiceGrid"></div>
           <button class="btn choice-close" id="btnChoiceClose" type="button" style="display:none">Later</button>
+        </div>
+        <div class="choice" id="fuseChoice" aria-hidden="true">
+          <div class="choice-t">FUSE SUPER?</div>
+          <div class="choice-sub" id="fuseSub">Fuse two Lv3 towers into one SUPER tower!</div>
+          <button class="btn primary" id="btnFuseDo" type="button">融合 SUPER</button>
+          <button class="btn choice-close" id="btnFuseCancel" type="button">Later</button>
         </div>
         <div class="battlereport" id="battleReport" aria-hidden="true" role="dialog" aria-label="Defeat report">
           <div class="br-card">
