@@ -101,14 +101,19 @@
          icon gap so all four buttons (Pause/Resume, Restart,
          Sound, Speed) stay on ONE row in both the paused and
          unpaused states — font size, height, radius and colours
-         are unchanged */
+         are unchanged. The four buttons share the bar evenly
+         (equal flex, labels centred): the old PICK! button sat
+         between Restart and Sound, and the flexible spacer left
+         behind it left an empty gap in the middle once PICK! was
+         removed, so the spacer is gone and the buttons fill the
+         width themselves. */
       .controls .btn {
         padding: 10px 9px;
         gap: 4px;
         white-space: nowrap;
-        flex: none;
+        flex: 1 1 0;
+        justify-content: center;
       }
-      .controls .spacer { min-width: 0; }
       .btn {
         appearance: none;
         border: 2px solid var(--panel-line);
@@ -139,7 +144,6 @@
       .btn.armed { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 14px rgba(255,159,46,.45); }
       .btn:disabled { opacity: .5; cursor: default; }
       .btn svg { width: 15px; height: 15px; flex: none; }
-      .spacer { flex: 1; }
       /* ---------- speed button attention cue: the button itself is
          untouched (same shape, size, colours and label) — only a
          soft halo of light breathes around it so the eye can find
@@ -688,6 +692,34 @@
          with no gap or overlap between the zones */
       .mode-hot-challenge { left: 9.0%; top: 51.0%; width: 81.0%; height: 13.0%; }
       .mode-hot-endless { left: 9.0%; top: 64.0%; width: 81.5%; height: 12.5%; }
+      /* ---------- title glow: a soft warm golden halo breathing
+         over the "TRICK OR DEFEND!" title (measured title rect:
+         x 0.192–0.805, y 0.055–0.197 of the poster). A plain div
+         inside .mode-poster, positioned by layoutModeOverlay()
+         from the DISPLAYED image rect (same fractions as the
+         buttons), so it tracks the title on every ratio — on tall
+         phones the poster's sides are cropped and the glow crops
+         with them. Pure CSS keyframes, ~5s breathing cycle.
+         pointer-events: none, so it never blocks a tap; it paints
+         above the poster image (DOM order, right after the img)
+         and below the bubble (z-index 3) and the mode buttons
+         (later in the DOM). The poster image itself never moves.
+         The % rect below is only the fallback before JS measures
+         the displayed rect. ---------- */
+      .title-glow {
+        position: absolute;
+        left: 19.2%; top: 5.5%; width: 61.3%; height: 14.2%;
+        pointer-events: none;
+        background: radial-gradient(ellipse at center,
+          rgba(255, 196, 80, 0.55) 0%,
+          rgba(255, 158, 46, 0.30) 45%,
+          rgba(255, 158, 46, 0) 70%);
+        animation: titleGlow 5s ease-in-out infinite;
+      }
+      @keyframes titleGlow {
+        0%, 100% { opacity: 0.35; }
+        50% { opacity: 0.95; }
+      }
       /* ---------- full-bleed mode screen: while the mode popup is
          open the top button bar goes away. The body class is added
          by showModeChoice() in game.js and removed by chooseMode();
@@ -1224,19 +1256,23 @@
          width below are image fractions (the fallback before JS
          measures the displayed rect), measured on the art itself:
          title ends ~19.7%, Dracula's head x 37.8–59.8% y 23.3–33.6%
-         (face 39.5–60.0% x 26.5–33.5%), Frankenstein's head starts
-         at 32.0% — so the bubble is narrow (35% wide, left 2%,
-         top 20.5%): it sits left of Dracula's head and above
-         Frankenstein's, clear of the title and the gold plaque
-         (starts 51%), its tail (tip ~92.5% of its width) pointing
-         down at Dracula from just left of his hair. The old 58%
-         bubble covered his face. layoutModeOverlay() overrides
-         these with pixels from the displayed image rect, so the
-         bubble stays put on every screen ratio — and on tall
-         screens, where the poster's sides are cropped, it caps
-         the bubble's right edge at image x 37% (shrinking the
-         bubble and its font) so the left-edge clamp can never
-         shove it over Dracula's head. ---------- */
+         (face 40.3–59.7% x 26.0–33.7%, re-measured 2026-11-06),
+         Frankenstein's head starts at 32.0% — so the bubble is
+         narrow (35% wide, left 2%, top 20.5%): it sits left of
+         Dracula's head and above Frankenstein's, clear of the
+         title and the gold plaque (starts 51%), its tail on the
+         bubble's RIGHT edge at ~70% of its height, tip ~10px
+         right of the bubble, just left of his hair at face height,
+         pointing right at his face. (The old tail hung off the
+         bottom edge and pointed down at his outstretched hand.)
+         The old 58% bubble covered his face. layoutModeOverlay()
+         overrides these with pixels from the displayed image rect,
+         so the bubble stays put on every screen ratio — and on
+         tall screens, where the poster's sides are cropped, it
+         caps the bubble's right edge at image x 37% (shrinking
+         the bubble and its font) so the left-edge clamp can never
+         shove it over Dracula's head — the cap is also what keeps
+         the right-side tail tip short of his face. ---------- */
       .dracula-bubble {
         position: absolute;
         left: 2%;
@@ -1262,7 +1298,7 @@
         font-size: clamp(11.5px, 3.2vw, 14px);
         line-height: 1.35;
         box-shadow: 0 8px 20px rgba(10, 4, 30, .45);
-        transform-origin: 92% 100%;
+        transform-origin: 100% 70%;
         /* pre-appearance state: fully shrunk and invisible, so the
            bubble is genuinely absent until the page has loaded and
            the .show class starts the pop from nothing */
@@ -1276,24 +1312,23 @@
       }
       /* the bubble + tail as ONE drawn shape: an inline SVG sits
          behind the words, sized to the bubble box plus the extra
-         strip below it where the tail tip lives. Its single path
-         (see the markup) outlines the rounded rectangle, diverts
-         down around the tail triangle where the tail joins the
-         bottom edge — tip centred at ~92.5% of the width, ~13px
-         below the bubble, so it points down at Dracula from the
-         bubble's right end (the old tail sat at ~77% and the wide
-         bubble covered his face) — and continues
-         along the rest of the bottom edge. Because the stroke is
-         one continuous outline, the join has no horizontal line
-         to hide: nothing is patched or covered. vector-effect
-         keeps the stroke at a true 3px however the shape is
-         stretched to fit the box */
+         10px strip on the RIGHT where the tail tip lives. Its
+         single path (see the markup) outlines the rounded
+         rectangle, diverts right around the tail triangle where
+         the tail joins the right edge — tip at ~70% of the
+         height, ~10px right of the bubble, so it points right at
+         Dracula's face from the bubble's right end — and
+         continues down the rest of the right edge. Because the
+         stroke is one continuous outline, the join has no
+         vertical line to hide: nothing is patched or covered.
+         vector-effect keeps the stroke at a true 3px however the
+         shape is stretched to fit the box */
       .dracula-bubble .bubble-shape {
         position: absolute;
         left: 0;
         top: 0;
-        width: 100%;
-        height: calc(100% + 14px);
+        width: calc(100% + 10px);
+        height: 100%;
         overflow: visible;
         pointer-events: none;
       }
@@ -1380,6 +1415,7 @@
         .game-title { transform: none; animation: none; }
         .dracula-bubble { animation: none; opacity: 1; transform: none; }
         .dracula-bubble .w { animation: none; opacity: 1; }
+        .title-glow { animation: none; opacity: .55; }
       }
       /* ---------- pre-splash tap page (restored 2026-11-06): a brief
          title card shown after the loading screen and BEFORE the
@@ -2066,7 +2102,6 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
           Restart
         </button>
-        <span class="spacer"></span>
         <button class="btn on" id="btnSound" type="button" aria-pressed="true">
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9c1.2 1.6 1.2 4.4 0 6M18.5 6.5c2.4 3.2 2.4 7.8 0 11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
           Sound
@@ -2186,7 +2221,8 @@
     <div class="choice modechoice" id="modeChoice" aria-hidden="true">
       <div class="mode-poster">
         <img src="assets/mode-select.webp" width="940" height="1673" decoding="async" alt="Trick or Defend! Choose your mode" />
-        <div class="dracula-bubble" role="note" aria-label="Count Dracula says: I despise those pesky trick-or-treaters! Minions, keep them away from my castle!"><svg class="bubble-shape" viewBox="0 0 300 118" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M 17 2 H 283 Q 298 2 298 17 V 87 Q 298 102 283 102 H 289 L 279 113.5 Q 277.5 116.2 276 113.5 L 255 102 H 17 Q 2 102 2 87 V 17 Q 2 2 17 2 Z" fill="rgba(255, 246, 224, .78)" stroke="#2b1050" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg><span class="w" style="--d:.55s">I</span> <span class="w" style="--d:.62s">despise</span> <span class="w" style="--d:.69s">those</span> <span class="w" style="--d:.76s">pesky</span> <span class="w" style="--d:.83s">trick-or-treaters!</span> <span class="w" style="--d:.97s">Minions,</span> <span class="w" style="--d:1.04s">keep</span> <span class="w" style="--d:1.11s">them</span> <span class="w" style="--d:1.18s">away</span> <span class="w" style="--d:1.25s">from</span> <span class="w" style="--d:1.32s">my</span> <span class="w" style="--d:1.39s">castle!</span></div>
+        <div class="title-glow" aria-hidden="true"></div>
+        <div class="dracula-bubble" role="note" aria-label="Count Dracula says: I despise those pesky trick-or-treaters! Minions, keep them away from my castle!"><svg class="bubble-shape" viewBox="0 0 310 104" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M 17 2 H 283 Q 298 2 298 17 V 58 L 308.5 70.5 Q 310 72 308.5 73.5 L 298 86 V 87 Q 298 102 283 102 H 17 Q 2 102 2 87 V 17 Q 2 2 17 2 Z" fill="rgba(255, 246, 224, .78)" stroke="#2b1050" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg><span class="w" style="--d:.55s">I</span> <span class="w" style="--d:.62s">despise</span> <span class="w" style="--d:.69s">those</span> <span class="w" style="--d:.76s">pesky</span> <span class="w" style="--d:.83s">trick-or-treaters!</span> <span class="w" style="--d:.97s">Minions,</span> <span class="w" style="--d:1.04s">keep</span> <span class="w" style="--d:1.11s">them</span> <span class="w" style="--d:1.18s">away</span> <span class="w" style="--d:1.25s">from</span> <span class="w" style="--d:1.32s">my</span> <span class="w" style="--d:1.39s">castle!</span></div>
         <button class="mode-hot mode-hot-challenge" id="btnModeChallenge" type="button" aria-label="闯关模式：10 waves, hold the castle, then victory"><span class="mode-hot-t">闯关模式</span><span class="mode-hot-s">10 waves — hold the castle, then victory!</span></button>
         <button class="mode-hot mode-hot-endless" id="btnModeEndless" type="button" aria-label="无限流模式：endless waves, how long can you last"><span class="mode-hot-t">无限流模式</span><span class="mode-hot-s">Endless waves — how long can you last?</span></button>
       </div>
