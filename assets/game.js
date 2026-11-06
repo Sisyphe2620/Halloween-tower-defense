@@ -992,7 +992,7 @@
       witch:   { nm: 'Witch Tower',   cost: 100, range: 108, rate: 2.6, dmg: 8,  proj: 'potion' },
       mummy:   { nm: 'Mummy Tower', cost: 125, range: 104, rate: 1.75, dmg: 6,  proj: 'vortex' },
       cat:     { nm: 'Black Cat Tower',   cost: 60,  range: 102, rate: 0.65, dmg: 6,  proj: 'ball' },
-      skeleton: { nm: 'Skeleton Tower', cost: 90, range: 102, rate: 1.25, dmg: 0,  proj: 'pile' },
+      skeleton: { nm: 'Skeleton Tower', cost: 90, range: 150, rate: 1.25, dmg: 0,  proj: 'pile' },
       /* the six rotating recruits (see ROSTERS below): only three of
          them share the panel with three originals in any one game.
          Spider — web spray: wraps the kids around the landing point
@@ -1053,14 +1053,18 @@
     var PILE_BLOCK = 0.8;                                  // …seconds a kid is held up by each bump
     var CRIT_CHANCE = 0.3;                                 // black cat paw ball
     /* -------- tower levels: every monster grows Lv1 -> Lv2 -> Lv3 --------
-       A tower levels on ITS OWN chase-away kills: 15 of its own kids
-       earn Lv2, 40 total earn Lv3. Each level multiplies damage
-       (x1.6 a level), bullet size (x1.4) and body size, trims the
-       fire interval by 15% and stretches range by 10%; each monster's
-       special grows too (chain targets, mist radius, whirlwind size,
-       crit chance...) — those per-kind numbers live where the tower
-       fires and where its candy lands, below. */
-    var LV_NEED = [0, 15, 40];
+       Levels no longer come from a tower's OWN kills. Every kid any
+       tower chases away adds 1 point to one shared pool; every
+       PICK_EVERY points the player banks one PICK (see checkUnlock),
+       spent in the monster picker: place a new tower of the picked
+       kind, or tap one already on the field to level it up. Each
+       level multiplies damage (x1.6 a level), bullet size (x1.4)
+       and body size, trims the fire interval by 15% and stretches
+       range by 10%; each monster's special grows too (chain
+       targets, mist radius, whirlwind size, crit chance...) —
+       those per-kind numbers live where the tower fires and where
+       its candy lands, below. */
+    var PICK_EVERY = 15;              // points (kids chased away) per banked pick
     var LVL_DMG = [1, 1.6, 2.56];
     var LVL_PROJ = [1, 1.4, 1.96];
     var LVL_SCALE = [0.82, 1, 1.18];
@@ -1197,32 +1201,37 @@
     var RISE_DUR = reduceMotion ? 0.2 : 0.7;     // monster rises from the grave
     var THROW_DUR = reduceMotion ? 0.12 : 0.3;   // candy-throw wind-up + release
     /* like the reference video: towers are NOT bought from a shop. The
-       FIRST tower is free — the choice panel pops the moment the game
-       starts, before any kid needs to be driven off. From the second
-       tower on, kills fill a progress bar; when it fills, the choice
-       panel pops again, the player picks a monster, then taps a
-       gravestone to place it. Kills needed per tower climb steeply as
-       the game goes on (there are 18 gravestones): the first is free,
-       then 8, 10, 14, 18, 22, … 90 — every step is exactly DOUBLE the
-       previous ladder (was 4, 5, 7, 9, 11, … 45), so each new monster
-       costs twice as many kids chased away as before, and the gaps
-       between towers keep growing, so each new monster is properly
-       earned and the defence builds up gradually, tower by tower,
-       instead of flooding the field in the first waves (all 18
-       towers would now take 768 chased kids — more than the 373 who
-       show up across the 20 waves, so only the strongest runs unlock
-       the later towers at all) */
-    var THRESHOLDS = [0, 8, 10, 14, 18, 22, 26, 30, 36, 40, 46, 52, 58, 64, 72, 80, 90, 102];
-    /* kids arrive in 20 set waves instead of an endless random stream:
-       every wave is bigger than the last (6 kids in wave 1, 31 in wave
-       20), spawns a little faster, and fields a wider, tougher mix of
-       kid kinds (see KID_TYPES: a new, stronger kind debuts every
-       wave while the old kinds return boosted) — a steady difficulty
-       ramp. Between waves there is a short breather before the next
-       one is announced. */
+       The FIRST tower is free — the choice panel pops the moment
+       the game starts, before any kid needs to be driven off. After
+       that, every kid chased away adds 1 point to the shared pool;
+       every 15 points banks one PICK (see checkUnlock), and a pick
+       is spent in the monster picker: place a new tower of the
+       picked kind, or tap one already on the field to level it up.
+       There is no per-tower kill ladder any more, so a defence
+       grows as fast as the whole field chases kids away. */
+    /* kids arrive in set waves: every wave is bigger than the last
+       (6 kids in wave 1), spawns a little faster, and fields a
+       wider, tougher mix of kid kinds (see KID_TYPES: a new,
+       stronger kind debuts every wave while the old kinds return
+       boosted) — a steady difficulty ramp. Between waves there is
+       a short breather before the next one is announced. In
+       endless mode the waves never stop, and each wave past the
+       first adds about one more kid every two waves on top. */
     var TOTAL_WAVES = 10;
-    function waveCount(w) { return 4 + Math.ceil(w * 1.35); }
+    // wave label: challenge shows "3/10", endless shows the plain
+    // wave number ("14") — there is no wave 10 to be out of
+    function waveLabel(n, endless) { return endless ? String(n) : n + '/' + TOTAL_WAVES; }
+    function waveCount(w) { return 4 + Math.ceil(w * 1.35) + (runMode === 'endless' ? Math.floor((w - 1) / 2) : 0); }
     function waveSpawnGap(w) { return Math.max(0.5, 1.3 - w * 0.035); }
+    /* run mode: picked once per page session in the mode popup
+       (after START, before the first tower picker) — 'challenge'
+       is the current game (exactly 10 waves, then victory), and
+       'endless' never ends (waves keep coming, harder each time,
+       until the house falls). Kept OUTSIDE resetGame's state so
+       Restart replays the same mode; only a fresh page load (back
+       to the start screen) asks again. */
+    var runMode = null;     // 'challenge' | 'endless'
+    var modeChosen = false; // this page session has picked a mode
     var WAVE_BREAK = 4.5;
     /* the round stone plaza in front of the castle door — exactly
        the ellipse drawDoorstep() paints: centre (225, 268), radii
@@ -1375,10 +1384,12 @@
         houseHP: HOUSE_MAX,
         knockCount: 0,
         kills: 0,                // kids driven away, total
-        prog: 0,                 // kills toward the next tower unlock
-        thrIdx: 0,               // which THRESHOLDS step we are on
+        prog: 0,                 // points toward the next pick (1 per kid chased away)
+        picks: 0,                // banked picks (each = one placement or one upgrade)
+        pickMode: null,          // how the open picker was reached: null | 'free' | 'pick'
+        pendingPick: false,      // a picked card is waiting for a field tap
+        freePickDone: false,     // the free first-tower picker has popped
         choosing: false,         // tower-choice popup is up (game frozen)
-        upPanel: null,           // tower whose upgrade panel is open (game frozen)
         pendingKind: null,       // monster picked, waiting for a gravestone tap
         houseCd: 1.0,
         houseHold: true,         // castle cannon starts stood-down: the plaza is empty
@@ -1444,8 +1455,8 @@
       if (pa0) { pa0.classList.remove('show'); pa0.setAttribute('aria-hidden', 'true'); }
       var ch0 = document.getElementById('towerChoice');
       if (ch0) { ch0.classList.remove('show'); ch0.setAttribute('aria-hidden', 'true'); }
-      var up0 = document.getElementById('upPanel');
-      if (up0) { up0.classList.remove('show'); up0.setAttribute('aria-hidden', 'true'); }
+      var mc0 = document.getElementById('modeChoice');
+      if (mc0) { mc0.classList.remove('show'); mc0.setAttribute('aria-hidden', 'true'); }
       syncHUD(true);
     }
     resetGame();
@@ -1460,16 +1471,18 @@
       var tier = pickKidTier(wv);
       var def = KID_TYPES[tier];
       // the kind's own base HP, boosted by the wave it marches in:
-      // +5% a wave compounding up to wave 14, so kinds that debuted
-      // early still come back tougher every time they reappear.
-      // From wave 15 on the compounding halves to +2.5% a wave
-      // (the wave-14 factor, then 1.025 for each wave past 14), so
-      // waves 15–20 stay stronger than wave 14 and keep climbing,
-      // just less steeply. From wave 5 on the settled HP is then
-      // multiplied by 1.5 on top of that — and from wave 10 on by
-      // 1.6 instead — EVERY kind alike, the two speedsters
-      // included; waves 1–4 settle exactly as before
-      var hpGrowth = wv <= 14 ? Math.pow(1.05, wv - 1) : Math.pow(1.05, 13) * Math.pow(1.025, wv - 14);
+      // +5% a wave compounding, so kinds that debuted early still
+      // come back tougher every time they reappear. In challenge
+      // mode the compounding halves to +2.5% a wave from wave 15
+      // on (the wave-14 factor, then 1.025 for each wave past 14),
+      // because the run ends at wave 10 anyway. In endless mode
+      // the full x1.05^(wave-1) curve keeps compounding past wave
+      // 10 with no cap, so the road never stops getting tougher.
+      // From wave 5 on the settled HP is then multiplied by 1.5 on
+      // top of that — and from wave 10 on by 1.6 instead — EVERY
+      // kind alike, the two speedsters included; waves 1–4 settle
+      // exactly as before
+      var hpGrowth = runMode === 'endless' ? Math.pow(1.05, wv - 1) : (wv <= 14 ? Math.pow(1.05, wv - 1) : Math.pow(1.05, 13) * Math.pow(1.025, wv - 14));
       var khp = Math.round(def.hp * hpGrowth) + Math.random() * 6;
       if (wv >= 10) khp *= 1.6;
       else if (wv >= 5) khp *= 1.5;
@@ -1517,11 +1530,15 @@
         // From wave 10 on, the whole road pace is then multiplied
         // by 1.3 on top of everything above — the kind's own
         // factor included, so the ninja's 1.5 and the cheetah's
-        // 1.68 stack with it rather than being replaced. This
-        // `speed` drives ONLY the march down the road: fleeing
+        // 1.68 stack with it rather than being replaced. In
+        // endless mode one more multiplier stacks on top:
+        // x1.03 compounding per wave, so wave 20 runs about
+        // 1.75x the wave-1 pace before the step bonus — each wave
+        // is noticeably faster, and eventually overwhelming.
+        // This `speed` drives ONLY the march down the road: fleeing
         // back (FLEE_SPEED) and walking to a knocking slot in the
         // plaza (its own fixed pace) are separate and unchanged.
-        speed: (42 + Math.random() * 10 + speedBonus) * (def.spd || (1 - tier * 0.008)) * (wv >= 10 ? 1.3 : 1),
+        speed: (42 + Math.random() * 10 + speedBonus) * (def.spd || (1 - tier * 0.008)) * (wv >= 10 ? 1.3 : 1) * (runMode === 'endless' ? Math.pow(1.03, wv - 1) : 1),
         hp: khp, hpMax: khp,
         x: PATH[0][0], y: PATH[0][1],
         mode: 'walk',            // walk | toSlot | knock | happy | cheer
@@ -1763,7 +1780,7 @@
       if (!battleStats) return;
       var box = document.getElementById('battleReport');
       if (!box) return;
-      document.getElementById('brWaves').textContent = battleStats.waves + '/' + TOTAL_WAVES;
+      document.getElementById('brWaves').textContent = waveLabel(battleStats.waves, battleStats.endless);
       document.getElementById('brKids').textContent = battleStats.kids;
       document.getElementById('brCombo').textContent = 'x' + battleStats.combo;
       document.getElementById('brTop').textContent = battleStats.top;
@@ -1899,7 +1916,7 @@
     function battleShareText() {
       var rank = battleRank(battleStats.waves);
       return '\uD83C\uDF83 Halloween Tower Defense — I earned the title "' + rank + '"! I survived wave ' +
-        battleStats.waves + '/' + TOTAL_WAVES + ' and repelled ' + battleStats.kids +
+        waveLabel(battleStats.waves, battleStats.endless) + ' and repelled ' + battleStats.kids +
         ' trick-or-treat kids. Can you defend Dracula\u2019s castle longer?';
     }
     /* one stat cell, mirroring .br-cell: label + value stacked
@@ -2006,7 +2023,7 @@
             if (s.topKind) {
               paintTopDefender(ctx, s.topKind, W * 0.0838, H * 0.4669, W * 0.1123, H * 0.0801, W * 0.14, H * 0.529, 1.45);
             }
-            drawCardCell(ctx, W, H, [0.173, 0.361, 0.172, 0.087], 'Wave Reached', s.waves + '/' + TOTAL_WAVES);
+            drawCardCell(ctx, W, H, [0.173, 0.361, 0.172, 0.087], 'Wave Reached', waveLabel(s.waves, s.endless));
             drawCardCell(ctx, W, H, [0.481, 0.361, 0.153, 0.087], 'Kids Knocked', String(s.kids));
             drawCardCell(ctx, W, H, [0.753, 0.361, 0.175, 0.087], 'Best Combo', 'x' + s.combo);
             drawCardCell(ctx, W, H, [0.201, 0.465, 0.283, 0.086], 'Top Defender', s.top, 0.042);
@@ -2247,6 +2264,7 @@
       state.towers.forEach(function (tw) { if (!topTw || tw.kills > topTw.kills) topTw = tw; });
       battleStats = {
         waves: state.wave,
+        endless: runMode === 'endless',
         kids: state.kills,
         combo: bestCombo,
         top: (topTw && topTw.kills > 0) ? TOWER_DEFS[topTw.kind].nm.replace(/ Tower$/, '') : '\u2014',
@@ -2325,19 +2343,11 @@
         state.prog++;
         addFloat(k.x, k.y - 40, 'Progress +1', '#ffd23e', 14);
         happySound();
-        // the tower whose candy landed the chase-away banks it toward
-        // its OWN level: 15 of its own kills earn Lv2, 40 earn Lv3 —
-        // the moment it qualifies, the gold LV UP! badge starts
-        // bouncing over it (drawn in drawSites) with a chime
-        if (src) {
-          src.kills++;
-          if (!src.upReady && src.level < 3 && src.kills >= LV_NEED[src.level]) {
-            src.upReady = true;
-            src.upT = 0;
-            levelUpSound();
-            addFloat(src.x, src.y - 76, 'LV UP!', '#ffd23e', 17);
-          }
-        }
+        // the tower whose candy landed the chase-away banks the
+        // kill toward the defeat report's Top Defender only —
+        // levels come from the shared points pool now (see
+        // checkUnlock), never from one tower's own kills
+        if (src) src.kills++;
         syncHUD(true);
         checkUnlock();
       }
@@ -2615,34 +2625,60 @@
       }
       return cur;
     }
-    /* progress filled up -> pop the tower-choice panel (game freezes
-       behind it, exactly like the reference's placement moment) */
+    /* the shared points pool: every kid chased away adds 1 point
+       (state.prog). The FIRST tower is free — the choice panel
+       pops the moment the game starts, before any kid needs to
+       be driven off. After that, every PICK_EVERY points banks
+       one PICK (extras stack: a second 15 while one waits shows
+       x2 on the button, so nothing is ever lost); the pick itself
+       waits on the gold PICK! button in the top bar until the
+       player taps it — no auto-popup mid-wave any more. Banking
+       needs no empty gravestone, because a pick can also be spent
+       levelling a tower that is already standing. */
     function checkUnlock() {
-      if (state.phase !== 'playing' || state.choosing || state.pendingKind) return;
-      if (state.thrIdx >= THRESHOLDS.length) return;
-      if (state.prog < THRESHOLDS[state.thrIdx]) return;
-      var anyEmpty = false, anyBusy = false;
-      SITES.forEach(function (s) {
-        if (s.phase === 'empty') anyEmpty = true;
-        if (s.phase === 'falling' || s.phase === 'rising') anyBusy = true;
-      });
-      if (!anyEmpty || anyBusy) return; // wait until the grave is free / built
-      var isFree = THRESHOLDS[state.thrIdx] === 0;
-      state.prog = 0;
-      state.thrIdx++;
+      if (state.phase !== 'playing') return;
+      if (!state.freePickDone) {
+        if (state.choosing || state.pendingKind) return;
+        state.freePickDone = true;
+        openChoice('free');
+        return;
+      }
+      var banked = false;
+      while (state.prog >= PICK_EVERY) {
+        state.prog -= PICK_EVERY;
+        state.picks++;
+        banked = true;
+      }
+      if (banked) {
+        levelUpSound();
+        addFloat(225, 90, 'PICK! ×' + state.picks, '#ffd23e', 16);
+        updatePickBtn();
+        syncHUD(true);
+      }
+    }
+    /* open the six-card monster picker. 'free' is the free first
+       tower at game start (no pick spent, cannot be skipped);
+       'pick' spends one banked pick — the player may also close
+       it with Later and keep the pick for another moment. */
+    function openChoice(mode) {
+      state.pickMode = mode;
       state.choosing = true;
       state.bombArmed = false;
       state.rainArmed = false;
       var ch = document.getElementById('towerChoice');
       if (ch) { ch.classList.add('show'); ch.setAttribute('aria-hidden', 'false'); }
       var ct = document.getElementById('choiceTitle');
-      if (ct) ct.textContent = 'Choose Your Defense Monster';
+      if (ct) ct.textContent = mode === 'pick' ? 'Pick a Monster!' : 'Choose Your Defense Monster';
+      var cs = document.getElementById('choiceSub');
+      if (cs) cs.style.display = mode === 'pick' ? '' : 'none';
+      var cb = document.getElementById('btnChoiceClose');
+      if (cb) cb.style.display = mode === 'pick' ? '' : 'none';
       happySound();
       syncHUD(true);
     }
     function update(dt) {
       state.time += dt;
-      if (state.choosing || state.upPanel) return; // frozen while a popup is up
+      if (state.choosing) return; // frozen while a popup is up
       if (state.houseFlash > 0) state.houseFlash = Math.max(0, state.houseFlash - dt);
       // chimney smoke
       state.smokeTimer -= dt;
@@ -2681,7 +2717,7 @@
           if (site.anim >= RISE_DUR) {
             site.phase = 'built'; site.anim = 0;
             var def = TOWER_DEFS[site.kind];
-            var tw = { x: site.x, y: site.y, kind: site.kind, range: def.range, rate: def.rate, dmg: def.dmg, proj: def.proj, cd: 0.35, throwT: 0, level: 1, kills: 0, upReady: false, upT: 0, growT: -1, growFrom: LVL_SCALE[0], flashT: 0, buffT: 0, armGone: false, leap: null, leapCd: 1.6 };
+            var tw = { x: site.x, y: site.y, kind: site.kind, range: def.range, rate: def.rate, dmg: def.dmg, proj: def.proj, cd: 0.35, throwT: 0, level: 1, kills: 0, growT: -1, growFrom: LVL_SCALE[0], flashT: 0, buffT: 0, armGone: false, leap: null, leapCd: 1.6 };
             site.tower = tw;
             state.towers.push(tw);
             popSound();
@@ -2770,7 +2806,7 @@
         if (state.waveState === 'spawning') {
           if (!state.waveAnnounced) {
             state.waveAnnounced = true;
-            addFloat(225, 118, state.wave >= TOTAL_WAVES ? 'FINAL WAVE!' : 'WAVE ' + state.wave + '!', '#ffd23e', 25);
+            addFloat(225, 118, (runMode === 'challenge' && state.wave >= TOTAL_WAVES) ? 'FINAL WAVE!' : 'WAVE ' + state.wave + '!', '#ffd23e', 25);
           }
           state.spawnTimer -= dt;
           if (state.spawnTimer <= 0 && state.waveLeft > 0) {
@@ -2778,7 +2814,10 @@
             spawnKid();
             state.waveLeft--;
             if (state.waveLeft <= 0) {
-              if (state.wave >= TOTAL_WAVES) state.waveState = 'done';
+              // challenge ends at wave 10 (waveState 'done' leads
+              // to the victory screen); endless just takes the
+              // usual breather and marches on to the next wave
+              if (runMode === 'challenge' && state.wave >= TOTAL_WAVES) state.waveState = 'done';
               else { state.waveState = 'break'; state.breakTimer = WAVE_BREAK; }
             }
           }
@@ -2890,7 +2929,6 @@
         // after an upgrade, and the grow-up animation (star sparkles
         // while the monster swells from its old size to its new one)
         state.towers.forEach(function (tw) {
-          if (tw.upReady) tw.upT += dt;
           if (tw.buffT > 0) tw.buffT = Math.max(0, tw.buffT - dt); // werewolf howl speed-up ticking down
           if (tw.flashT > 0) tw.flashT = Math.max(0, tw.flashT - dt);
           if (tw.growT >= 0) {
@@ -5256,19 +5294,6 @@
           ctx.strokeText(stxt, site.x, sy);
           ctx.fillStyle = '#ffd23e';
           ctx.fillText(stxt, site.x, sy);
-          // the gold LV UP! badge bouncing over a tower that has
-          // earned a level — it stays until the player taps the tower
-          // and chooses (in the upgrade panel) to spend it
-          if (tw2 && tw2.upReady) {
-            var by2 = sy - 17 + Math.sin(t * 5 + site.x) * 2.5;
-            ctx.fillStyle = '#ffb03a';
-            rr(site.x - 27, by2 - 10, 54, 20, 10); ctx.fill();
-            ctx.strokeStyle = '#431d00'; ctx.lineWidth = 2;
-            rr(site.x - 27, by2 - 10, 54, 20, 10); ctx.stroke();
-            ctx.fillStyle = '#431d00';
-            ctx.font = '800 12px "Baloo 2", sans-serif';
-            ctx.fillText('LV UP!', site.x, by2 + 0.5);
-          }
           // a werewolf howl still ringing in this tower: twin gold
           // chevrons bob at its shoulders while the speed-up lasts
           if (tw2 && tw2.buffT > 0) {
@@ -5882,7 +5907,12 @@
     /* ---------- first-run tutorial bubble (canvas) ---------- */
     function drawTutorial(t) {
       var bob = Math.sin(t * 3) * 3;
-      var tw = 256, th = 36, tx = 225 - tw / 2, ty = 304 + bob;
+      // in pick mode the bubble reminds the player of BOTH uses of
+      // the picked card (upgrade a tower of that kind, or place
+      // another on a grave) — so it runs a little wider than the
+      // plain first-tower placement hint
+      var isPick = state.pickMode === 'pick';
+      var tw = isPick ? 330 : 256, th = 36, tx = 225 - tw / 2, ty = 304 + bob;
       ctx.save();
       ctx.fillStyle = 'rgba(24,14,54,.93)';
       rr(tx, ty, tw, th, 12); ctx.fill();
@@ -5901,9 +5931,9 @@
       ctx.beginPath();
       ctx.moveTo(px - 10, ty + th - 1); ctx.lineTo(px + 10, ty + th - 1); ctx.lineTo(px, ty + th + 10); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#ffe9a8';
-      ctx.font = '700 14.5px "Baloo 2", sans-serif';
+      ctx.font = isPick ? '700 13px "Baloo 2", sans-serif' : '700 14.5px "Baloo 2", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('Tap a gravestone to place the ' + TOWER_DEFS[state.pendingKind].nm + '!', 225, ty + th / 2 + 1);
+      ctx.fillText(isPick ? ('Tap a ' + TOWER_DEFS[state.pendingKind].nm.replace(/ Tower$/, '') + ' to upgrade — or a grave!') : ('Tap a gravestone to place the ' + TOWER_DEFS[state.pendingKind].nm + '!'), 225, ty + th / 2 + 1);
       ctx.restore();
     }
 
@@ -5918,34 +5948,39 @@
     }
     function drawHUD() {
       ctx.textBaseline = 'middle';
-      // Four modules only, re-laid out: the lives pill, the tower
-      // unlock-progress mini-pill and the AT DOOR mini-pill are gone.
-      // Row 1 (top edge, evenly spread across the full width with
-      // matching 8px gaps and 10px side margins): kids driven away,
-      // wave, knock count. Row 2: the house HP bar alone, centred
+      // Four pills in row 1 (top edge, evenly spread across the
+      // full width with matching 8px gaps and 10px side margins):
+      // kids driven away, wave, knock count, and points toward
+      // the next pick. Row 2: the house HP bar alone, centred
       // and stretched wider now that it no longer shares its row.
-      // kids driven away (feeds the tower-unlock progress)
-      pill(10, 5, 96, function (x, y) {
+      // kids driven away (every one adds a point to the shared pool)
+      pill(10, 5, 88, function (x, y) {
         ctx.fillStyle = '#ff5d8f'; circle(x + 16, y + 13, 7.5); ctx.fill();
         ctx.fillStyle = '#ffd3e4'; circle(x + 16, y + 13, 3.2); ctx.fill();
         ctx.fillStyle = '#fff'; ctx.font = '800 15px "Baloo 2", sans-serif'; ctx.textAlign = 'left';
         ctx.fillText('×' + state.kills, x + 29, y + 14);
       });
       // wave
-      pill(114, 5, 150, function (x, y) {
+      pill(106, 5, 122, function (x, y) {
         ctx.fillStyle = '#fff'; circle(x + 17, y + 12, 6); ctx.fill();
         ctx.fillStyle = '#241453'; circle(x + 14.5, y + 11, 1.9); ctx.fill(); circle(x + 19.5, y + 11, 1.9); ctx.fill();
         ctx.fillRect(x + 13.8, y + 15.5, 6.4, 3);
         ctx.fillStyle = '#ffd23e'; ctx.font = '800 14px "Baloo 2", sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('WAVE ' + state.wave + '/' + TOTAL_WAVES, x + 29, y + 14);
+        ctx.fillText('WAVE ' + waveLabel(state.wave, runMode === 'endless'), x + 29, y + 14);
       });
       // knock count — how hard the door is being pounded
-      pill(272, 5, 168, function (x, y) {
+      pill(236, 5, 112, function (x, y) {
         ctx.fillStyle = '#ffb03a'; rr(x + 9, y + 6, 12, 14, 3); ctx.fill();
         ctx.fillStyle = '#7a4a12'; circle(x + 17.5, y + 13, 1.7); ctx.fill();
         ctx.fillStyle = state.phase === 'exploded' ? '#ff6b5e' : '#fff';
         ctx.font = '800 14px "Baloo 2", sans-serif'; ctx.textAlign = 'left';
         ctx.fillText('KNOCK ×' + state.knockCount, x + 28, y + 14);
+      });
+      // points toward the next pick: every kid chased away by any
+      // tower adds 1; every 15 banks one PICK on the top-bar button
+      pill(356, 5, 84, function (x, y) {
+        ctx.fillStyle = '#ffd23e'; ctx.font = '800 13.5px "Baloo 2", sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('PTS ' + state.prog + '/' + PICK_EVERY, x + 9, y + 14);
       });
       // house HP bar above the house — centred on the board and
       // wider than before, alone on its row. The frame pads the
@@ -6178,13 +6213,24 @@
       // grains whirling around it — it fades as it blows out
       state.vortexes.forEach(function (vx) {
         var vfade = Math.min(1, vx.t / 0.2, (vx.life - vx.t) / 0.5);
-        var vr = vx.r * (0.7 + 0.3 * Math.min(1, vx.t / 0.4));
+        var vr = vx.r * (0.85 + 0.15 * Math.min(1, vx.t / 0.4));
         ctx.save();
         ctx.globalAlpha = Math.max(0, vfade);
         ctx.translate(vx.x, vx.y);
-        ctx.strokeStyle = 'rgba(217,176,106,.85)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-        for (var vs = 0; vs < 3; vs++) {
-          var va0 = vx.t * 6 + vs * 2.1;
+        // soft sandy dust disc under the spiral, so the whirlwind
+        // reads as a sandstorm instead of a thin ring — the disc
+        // is exactly the slow/damage zone, so what you see is
+        // what it does (visuals only: DPS and slow unchanged)
+        ctx.fillStyle = 'rgba(217,176,106,.22)';
+        circle(0, 0, vr); ctx.fill();
+        ctx.fillStyle = 'rgba(232,200,130,.30)';
+        circle(0, 0, vr * 0.62); ctx.fill();
+        ctx.fillStyle = 'rgba(245,220,160,.28)';
+        circle(0, 0, vr * 0.34); ctx.fill();
+        // the spiral itself: one more arm, thicker and brighter
+        ctx.strokeStyle = 'rgba(222,182,110,.95)'; ctx.lineWidth = 4.5; ctx.lineCap = 'round';
+        for (var vs = 0; vs < 4; vs++) {
+          var va0 = vx.t * 6 + vs * 1.57;
           ctx.beginPath();
           for (var va = 0; va <= 4.2; va += 0.35) {
             var vrr = 4 + (va / 4.2) * (vr - 4);
@@ -6193,12 +6239,13 @@
           }
           ctx.stroke();
         }
-        // sand grains whirling around the spiral
+        // sand grains whirling around the spiral — twice as many,
+        // so the spin reads at a glance
         ctx.fillStyle = 'rgba(232,200,130,.95)';
-        for (var vg = 0; vg < 8; vg++) {
-          var vga = vx.t * 7 + vg * 0.85;
+        for (var vg = 0; vg < 16; vg++) {
+          var vga = vx.t * 7 + vg * 0.42;
           var vgr = 6 + ((vg * 7 + vx.seed * 20) % Math.max(1, vr - 6));
-          circle(Math.cos(vga) * vgr, Math.sin(vga) * vgr * 0.55, 1.6 + (vg % 3) * 0.6); ctx.fill();
+          circle(Math.cos(vga) * vgr, Math.sin(vga) * vgr * 0.55, 2.2 + (vg % 3) * 0.6); ctx.fill();
         }
         ctx.restore();
       });
@@ -6423,10 +6470,16 @@
       d.addEventListener('click', function () {
         if (!state.choosing) return;
         state.pendingKind = c.kind;
+        // in pick mode the pick is now in flight: it is spent only
+        // when the player taps a tower to upgrade it, or a
+        // gravestone to place a new one of this kind (see the
+        // canvas tap handler); closing or cancelling keeps it
+        state.pendingPick = (state.pickMode === 'pick');
         state.choosing = false;
         choiceEl.classList.remove('show');
         choiceEl.setAttribute('aria-hidden', 'true');
         if (soundOn) { ensureAudio(); popSound(); }
+        updatePickBtn();
         syncHUD(true);
       });
       cardEls[c.kind] = d;
@@ -6442,64 +6495,29 @@
     }
     refreshCards();
 
-    /* ---------------- tower upgrade panel ----------------
-       A tower that banked 15 (then 40) of its OWN chase-away kills
-       wears the bouncing gold LV UP! badge; tapping it opens this
-       panel — the next level's numbers, side by side, and the free
-       Upgrade button. "Later" leaves the badge right where it was. */
-    var upPanelEl = document.getElementById('upPanel');
+    /* ---------------- pick upgrades ----------------
+       There is no upgrade panel any more: a level comes from a
+       banked pick, spent in the monster picker (see openChoice).
+       doUpgrade() is the one place a tower actually levels up —
+       the grow-up animation, the flash and the chime are the old
+       panel's Upgrade button, minus the panel. */
     function stars(n) { var s = ''; for (var i = 0; i < n; i++) s += '\u2605'; return s; }
-    function fmtN(v) { return Math.round(v * 10) / 10; }
-    function specialLine(kind, lv) { // lv = current level; describes the NEXT one
-      if (kind === 'franken') return lv === 1 ? 'Chain lightning hits 2 \u2192 3 kids \u00b7 Stun 0.7s \u2192 0.95s' : 'Chain lightning hits 3 \u2192 4 kids \u00b7 Stun 0.95s \u2192 1.2s';
-      if (kind === 'ghost') return lv === 1 ? 'Lollipops pierce a whole row \u2014 faster & stronger' : 'Now throws TWO piercing lollipops at once!';
-      if (kind === 'witch') return lv === 1 ? 'Poison mist radius 30 \u2192 38 \u00b7 stronger poison & slow' : 'Poison mist radius 38 \u2192 46 \u00b7 stronger poison & slow';
-      if (kind === 'mummy') return lv === 1 ? 'Sand whirlwind radius 34 \u2192 42 \u00b7 stronger sand bite' : 'Sand whirlwind radius 42 \u2192 50 \u00b7 stronger bite \u00b7 TWO whirlwinds at once!';
-      if (kind === 'cat') return lv === 1 ? 'Crit chance 30% \u2192 40%' : 'Crit chance 40% \u2192 50% \u00b7 sometimes throws 2 paw balls!';
-      if (kind === 'spider') return lv === 1 ? 'Web slow \u00d70.35 \u2192 \u00d70.30 \u00b7 lasts 2.5s \u2192 3s' : 'Web slow \u00d70.30 \u2192 \u00d70.25 \u00b7 lasts 3s \u2192 3.5s \u00b7 wider web splash';
-      if (kind === 'bat') return lv === 1 ? 'Sonic ring radius 85 \u2192 94' : 'Sonic ring radius 94 \u2192 102 \u00b7 louder screech';
-      if (kind === 'scarecrow') return lv === 1 ? 'Crow pecks one kid for 4s \u2192 4.5s' : 'Crow pecks one kid for 4.5s \u2192 5s \u00b7 sharper beak';
-      if (kind === 'zombie') return lv === 1 ? 'Thrown arm flies 140 \u2192 154px out and back' : 'Thrown arm flies 154 \u2192 168px out and back';
-      if (kind === 'werewolf') return lv === 1 ? 'Howl: +30% tower speed for 5s \u2192 5.5s \u00b7 radius 120 \u2192 132' : 'Howl: +30% tower speed for 5.5s \u2192 6s \u00b7 radius 132 \u2192 144';
-      if (kind === 'slime') return lv === 1 ? 'Armor melt lasts 4s \u2192 4.75s · Goo puddle 36 \u2192 42, stickier' : 'Armor melt lasts 4.75s \u2192 5.5s · Goo puddle 42 \u2192 48, stickier';
-      return lv === 1 ? 'Bone pile 4 \u2192 6 bones \u00b7 blocks kids longer' : 'Bone pile 6 \u2192 8 bones \u00b7 blocks kids longer';
-    }
-    function openUpPanel(tw) {
-      state.upPanel = tw;
-      var lv = tw.level, def = TOWER_DEFS[tw.kind];
-      document.getElementById('upTitle').textContent = def.nm;
-      document.getElementById('upLv').innerHTML = 'Lv ' + lv + ' <span class="st">' + stars(lv) + '</span> \u2192 Lv ' + (lv + 1) + ' <span class="st">' + stars(lv + 1) + '</span>';
-      var rows = '';
-      rows += '<div class="row"><span>Damage</span><b>' + fmtN(def.dmg * LVL_DMG[lv - 1]) + ' \u2192 <span class="nx">' + fmtN(def.dmg * LVL_DMG[lv]) + '</span></b></div>';
-      rows += '<div class="row"><span>Fire rate</span><b>' + (def.rate * Math.pow(0.85, lv - 1)).toFixed(2) + 's \u2192 <span class="nx">' + (def.rate * Math.pow(0.85, lv)).toFixed(2) + 's</span></b></div>';
-      rows += '<div class="row"><span>Range</span><b>' + Math.round(def.range * (1 + 0.1 * (lv - 1))) + ' \u2192 <span class="nx">' + Math.round(def.range * (1 + 0.1 * lv)) + '</span></b></div>';
-      rows += '<div class="row"><span>Bullet size</span><b>\u00d7' + fmtN(LVL_PROJ[lv - 1]) + ' \u2192 <span class="nx">\u00d7' + fmtN(LVL_PROJ[lv]) + '</span></b></div>';
-      rows += '<div class="row"><span>Special</span><b class="sp">' + specialLine(tw.kind, lv) + '</b></div>';
-      rows += '<div class="row"><span>Kids chased by this tower</span><b>' + tw.kills + '</b></div>';
-      document.getElementById('upStats').innerHTML = rows;
-      upPanelEl.classList.add('show');
-      upPanelEl.setAttribute('aria-hidden', 'false');
-      if (soundOn) { ensureAudio(); popSound(); }
-    }
-    function closeUpPanel() {
-      state.upPanel = null;
-      upPanelEl.classList.remove('show');
-      upPanelEl.setAttribute('aria-hidden', 'true');
-    }
-    document.getElementById('btnUpgrade').addEventListener('click', function () {
-      var tw = state.upPanel;
-      if (!tw || tw.level >= 3) { closeUpPanel(); return; }
+    function doUpgrade(tw) {
       tw.growFrom = LVL_SCALE[tw.level - 1];
       tw.level++;
-      tw.upReady = false;
       tw.growT = 0;      // the grow-up animation (stars + swelling) starts
       tw.flashT = 0.55;  // ...with a bright flash over the tower
-      closeUpPanel();
       levelUpSound();
       addFloat(tw.x, tw.y - 78, 'Lv ' + tw.level + '!', '#ffd23e', 19);
+      // one pick = one action: the pick is spent now that the
+      // upgrade has landed
+      state.picks = Math.max(0, state.picks - 1);
+      state.pendingPick = false;
+      state.pendingKind = null;
+      state.pickMode = null;
+      updatePickBtn();
       syncHUD(true);
-    });
-    document.getElementById('btnUpLater').addEventListener('click', function () { closeUpPanel(); });
+    }
     /* ---------------- controls & loop ---------------- */
     var btnPlay = document.getElementById('btnPlay');
     var btnPlayTxt = document.getElementById('btnPlayTxt');
@@ -6515,6 +6533,12 @@
         : '<path d="M8 5.5v13l11-6.5z"/>';
     }
     function startGame() {
+      // mode first: on a fresh page load the player has not picked
+      // one yet, so START stops at the two big mode buttons and
+      // only continues once one is tapped (chooseMode below).
+      // Restart replays the same mode, so this gate never fires
+      // mid-session — modeChosen is set once and stays set.
+      if (!modeChosen) { showModeChoice(); return; }
       // entering the game is the moment the display font gets fetched
       // (it is kept off the start page's load path entirely)
       if (window.__tdLoadGameFont) window.__tdLoadGameFont();
@@ -6527,6 +6551,68 @@
       resetSkillTips();
       setPlaying(true);
     }
+    /* the mode buttons: the choice applies to the whole run.
+       Restart replays the same mode (runMode lives outside
+       resetGame's state); only a fresh page load — back at the
+       start screen — asks again. */
+    function showModeChoice() {
+      var mc = document.getElementById('modeChoice');
+      if (mc) { mc.classList.add('show'); mc.setAttribute('aria-hidden', 'false'); }
+    }
+    function chooseMode(mode) {
+      runMode = mode;
+      modeChosen = true;
+      var mc = document.getElementById('modeChoice');
+      if (mc) { mc.classList.remove('show'); mc.setAttribute('aria-hidden', 'true'); }
+      if (soundOn) { ensureAudio(); popSound(); }
+      startGame();
+    }
+    document.getElementById('btnModeChallenge').addEventListener('click', function () { chooseMode('challenge'); });
+    document.getElementById('btnModeEndless').addEventListener('click', function () { chooseMode('endless'); });
+    /* the gold PICK! button in the top bar: hidden until a pick is
+       banked. Tapping it opens the monster picker (game frozen)
+       and the pick is spent only when a placement or an upgrade
+       actually lands. While a picked card is waiting for a field
+       tap, the same button turns into Cancel Pick — it drops the
+       card, reopens the picker, and the banked pick stays put. */
+    var btnPick = document.getElementById('btnPick');
+    var pickBtnTxt = '';
+    function updatePickBtn() {
+      if (!btnPick) return;
+      var show = started && playing && state.phase === 'playing' && !state.choosing && (state.picks > 0 || state.pendingPick);
+      btnPick.hidden = !show;
+      var t = state.pendingPick ? 'Cancel Pick' : (state.picks > 1 ? 'PICK! ×' + state.picks : 'PICK!');
+      if (t !== pickBtnTxt) { pickBtnTxt = t; btnPick.textContent = t; }
+    }
+    btnPick.addEventListener('click', function () {
+      ensureAudio();
+      if (!started || !playing || state.phase !== 'playing') return;
+      if (state.pendingPick) {
+        // change of mind: drop the picked card, reopen the picker,
+        // keep the banked pick for another kind
+        state.pendingKind = null;
+        state.pendingPick = false;
+        openChoice('pick');
+        updatePickBtn();
+        return;
+      }
+      if (state.picks > 0 && !state.choosing && !state.pendingKind) {
+        openChoice('pick');
+        updatePickBtn();
+      }
+    });
+    /* the picker close button ("Later"): only offered on a pick,
+       never on the free first tower — closing keeps the banked
+       pick for later, it is never spent without an action. */
+    document.getElementById('btnChoiceClose').addEventListener('click', function () {
+      if (state.pickMode !== 'pick') return;
+      state.choosing = false;
+      state.pickMode = null;
+      var ch = document.getElementById('towerChoice');
+      if (ch) { ch.classList.remove('show'); ch.setAttribute('aria-hidden', 'true'); }
+      updatePickBtn();
+      syncHUD(true);
+    });
     var bs = document.getElementById('btnStart');
     if (bs) bs.addEventListener('click', startGame); // overlay removed 2026-10-29
     /* splash page: the START button on the cover art is wired by the
@@ -6546,6 +6632,10 @@
        same. Whoever wants the NEXT game must say so before
        calling this (only PLAY AGAIN does) */
     function restartRun() {
+      // a restart before any mode was ever picked (top Restart
+      // tapped before START) asks for the mode first instead of
+      // starting a modeless run
+      if (!modeChosen) { showModeChoice(); return; }
       ensureAudio();
       stopWinMusic(); // leaving the kids-win screen: back to the normal loop
       stopDefMusic(); // leaving the castle-saved screen: back to the normal loop
@@ -6644,7 +6734,6 @@
       var r = canvas.getBoundingClientRect();
       var x = (e.clientX - r.left) / r.width * W;
       var y = (e.clientY - r.top) / r.height * H;
-      if (state.upPanel) return; // the upgrade panel is up: its buttons decide
       if (state.rainArmed) {
         // candy rain skill: this tap picks the stretch of road to soak
         state.rainArmed = false;
@@ -6662,30 +6751,40 @@
         popSound();
         return;
       }
-      // tapping one of your own monsters: one that earned a level
-      // opens its upgrade panel; any other shows its level progress.
-      // The gold LV UP! badge bouncing above a tower is small and
-      // moves, so it gets its own generous tap zone first — the same
-      // position math as the draw code in drawSites (badge 54x20 at
-      // sy - 17, bouncing +-2.5) plus padding — opening the exact
-      // same upgrade panel as tapping the tower itself
-      var badgeTw = null;
-      state.towers.forEach(function (tw) {
-        if (!tw.upReady) return;
-        var mTopB = MONSTER_TOP[tw.kind] ? MONSTER_TOP[tw.kind][tw.level - 1] : -46;
-        var byB = tw.y + mTopB * 1.3 * LVL_SCALE[tw.level - 1] - 26;
-        if (Math.abs(x - tw.x) <= 39 && Math.abs(y - byB) <= 25) badgeTw = tw;
-      });
-      if (badgeTw) { openUpPanel(badgeTw); return; }
+      // a pick is in flight (a card was picked from the monster
+      // picker): tapping one of the picked kind on the field levels
+      // it up; tapping anywhere else places a new one of that kind
+      // on the closest empty gravestone (see tapSite). A tower of
+      // another kind just explains the choice — the pick is not spent.
+      if (state.pendingKind && state.pickMode === 'pick') {
+        var pickTw = null, pickD = 40;
+        state.towers.forEach(function (tw) {
+          var d = Math.hypot(tw.x - x, (tw.y - 12) - y);
+          if (d < pickD) { pickD = d; pickTw = tw; }
+        });
+        if (pickTw) {
+          if (pickTw.kind === state.pendingKind) {
+            if (pickTw.level >= 3) addFloat(pickTw.x, pickTw.y - 62, 'Lv 3 MAX \u2605\u2605\u2605', '#ffd23e', 14);
+            else doUpgrade(pickTw);
+          } else {
+            addFloat(pickTw.x, pickTw.y - 62, 'Tap a ' + TOWER_DEFS[state.pendingKind].nm.replace(/ Tower$/, '') + ' to upgrade it — or a gravestone to place another!', '#ffe9a8', 12.5);
+          }
+          return;
+        }
+        tapSite(x, y);
+        return;
+      }
+      // tapping one of your own monsters, outside a pick, shows
+      // only its level info now — there is no upgrade panel any
+      // more, and levels come from banked picks, never from a tap
       var tappedTw = null, tappedD = 40;
       state.towers.forEach(function (tw) {
         var d = Math.hypot(tw.x - x, (tw.y - 12) - y);
         if (d < tappedD) { tappedD = d; tappedTw = tw; }
       });
       if (tappedTw) {
-        if (tappedTw.upReady) openUpPanel(tappedTw);
-        else if (tappedTw.level >= 3) addFloat(tappedTw.x, tappedTw.y - 62, 'Lv 3 MAX \u2605\u2605\u2605', '#ffd23e', 14);
-        else addFloat(tappedTw.x, tappedTw.y - 62, 'Lv ' + tappedTw.level + ' \u00b7 chased ' + tappedTw.kills + '/' + LV_NEED[tappedTw.level], '#ffe9a8', 13.5);
+        if (tappedTw.level >= 3) addFloat(tappedTw.x, tappedTw.y - 62, 'Lv 3 MAX \u2605\u2605\u2605', '#ffd23e', 14);
+        else addFloat(tappedTw.x, tappedTw.y - 62, 'Lv ' + tappedTw.level + ' \u00b7 chased ' + tappedTw.kills + ' kids', '#ffe9a8', 13.5);
         return;
       }
       tapSite(x, y);
@@ -6699,14 +6798,22 @@
         var d = Math.hypot(s.x - x, (s.y - 6) - y);
         if (d < bd) { bd = d; best = s; }
       });
-      if (!best) return;
+      if (!best) {
+        // nowhere left to build: a pick in flight stays banked —
+        // the player cancels it from the PICK! button up top and
+        // chooses another kind, or closes the picker
+        if (state.pendingPick) addFloat(x, y - 30, 'No empty gravestones — tap PICK! up top to choose again', '#ff9a8a', 12.5);
+        return;
+      }
       if (!state.pendingKind) {
-        // towers only come from the kill-progress popup now; tapping a
-        // stone with nothing selected explains how far off the next one is
+        // no monster selected: tapping a stone explains how far
+        // off the next pick is (or points at the PICK! button)
         if (bd <= 60) {
-          var thr = THRESHOLDS[Math.min(state.thrIdx, THRESHOLDS.length - 1)];
-          var rem = thr - state.prog;
-          if (rem > 0) addFloat(best.x, best.y - 48, 'Chase away ' + rem + ' more to unlock a new tower!', '#ff9a8a', 14);
+          if (state.picks > 0) addFloat(best.x, best.y - 48, 'Tap the PICK! button up top to use your pick!', '#ffd23e', 14);
+          else {
+            var rem = PICK_EVERY - state.prog;
+            addFloat(best.x, best.y - 48, 'Chase away ' + rem + ' more for a PICK!', '#ff9a8a', 14);
+          }
         }
         return;
       }
@@ -6717,6 +6824,14 @@
       state.pendingKind = null;
       best.phase = 'falling';
       best.anim = 0;
+      // a placement spends a pick exactly like an upgrade does;
+      // the free first tower (pickMode 'free') spends nothing
+      if (state.pendingPick) {
+        state.picks = Math.max(0, state.picks - 1);
+        state.pendingPick = false;
+        updatePickBtn();
+      }
+      state.pickMode = null;
       syncHUD(true);
     }
 
@@ -6876,7 +6991,7 @@
     var btnBombTxt = document.getElementById('btnBombTxt');
     btnBomb.addEventListener('click', function () {
       ensureAudio();
-      if (!started || !playing || state.phase !== 'playing' || state.choosing || state.pendingKind || state.upPanel) return;
+      if (!started || !playing || state.phase !== 'playing' || state.choosing || state.pendingKind) return;
       if (state.bombCd > 0) return;
       state.bombArmed = !state.bombArmed;
       if (state.bombArmed) state.rainArmed = false;
@@ -6903,7 +7018,7 @@
     var btnScreamTxt = document.getElementById('btnScreamTxt');
     btnScream.addEventListener('click', function () {
       ensureAudio();
-      if (!started || !playing || state.phase !== 'playing' || state.choosing || state.pendingKind || state.upPanel) return;
+      if (!started || !playing || state.phase !== 'playing' || state.choosing || state.pendingKind) return;
       if (state.screamCd > 0) return;
       state.screamCd = SCREAM_CD;
       state.bombArmed = false;
@@ -6933,7 +7048,7 @@
     var btnRainTxt = document.getElementById('btnRainTxt');
     btnRain.addEventListener('click', function () {
       ensureAudio();
-      if (!started || !playing || state.phase !== 'playing' || state.choosing || state.pendingKind || state.upPanel) return;
+      if (!started || !playing || state.phase !== 'playing' || state.choosing || state.pendingKind) return;
       if (state.rainCd > 0) return;
       state.rainArmed = !state.rainArmed;
       if (state.rainArmed) state.bombArmed = false;
@@ -6966,6 +7081,7 @@
       updateBombBtn();
       updateScreamBtn();
       updateRainBtn();
+      updatePickBtn();
     }
     requestAnimationFrame(loop);
 
