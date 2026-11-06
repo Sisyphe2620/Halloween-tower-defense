@@ -7093,12 +7093,16 @@
     function showModeChoice() {
       var mc = document.getElementById('modeChoice');
       if (mc) { mc.classList.add('show'); mc.setAttribute('aria-hidden', 'false'); }
+      // full-bleed mode screen: hide the top button bar and the stage
+      // frame while choosing (restored by chooseMode below)
+      document.body.classList.add('mode-open');
     }
     function chooseMode(mode) {
       runMode = mode;
       modeChosen = true;
       var mc = document.getElementById('modeChoice');
       if (mc) { mc.classList.remove('show'); mc.setAttribute('aria-hidden', 'true'); }
+      document.body.classList.remove('mode-open');
       if (soundOn) { ensureAudio(); popSound(); }
       startGame();
     }
