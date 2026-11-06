@@ -869,7 +869,7 @@
        front of the castle door — so the kids' walk, the plaza
        slots and the knocking logic never change, only the shape
        of the road between spawn and plaza does. Everything that
-       reasons about the road (kids, the scream ghost, knockback,
+       reasons about the road (kids, the scream ghost, bone piles,
        the werewolf's pounce) works off PATH / SEG / pointAt, so
        swapping PATH swaps the whole game onto the new road; the
        skills aim by tap point or by kid position, never by a
@@ -972,10 +972,12 @@
        Franken — lightning orb: chains to 2 nearby kids and stuns them.
        Ghost — piercing lollipop: flies straight through a whole row.
        Witch — poison potion: splashes a mist that damages + slows.
-       Mummy — bandage roll: low damage, roots a kid in place.
+       Mummy — sand whirlwind: a swirling sand vortex chases a kid,
+       slowing it to half pace and stinging it while it lasts.
        Black Cat — paw balls: fastest shots, low damage, often crit ×2.
-       Skeleton — thrown bone: a solid crack that knocks the kid back
-       down the road, then ricochets to a second kid at 60% damage. */
+       Skeleton — bone pile: a heap of bones lobbed onto the road that
+       blocks the kids — each bump knocks a bone away until the road
+       is clear again. */
     /* balance pass: the defence side was winning too easily, so every
        tower's cooldown (seconds between shots) is a touch longer than
        it was — and the Witch, whose mist was the worst offender, is
@@ -988,9 +990,9 @@
       franken: { nm: 'Franken Tower', cost: 50, range: 104, rate: 1.6875, dmg: 18, proj: 'bolt' },
       ghost:   { nm: 'Ghost Tower',   cost: 75,  range: 106, rate: 1.1, dmg: 9,  proj: 'lolli' },
       witch:   { nm: 'Witch Tower',   cost: 100, range: 108, rate: 2.6, dmg: 8,  proj: 'potion' },
-      mummy:   { nm: 'Mummy Tower', cost: 125, range: 104, rate: 1.75, dmg: 6,  proj: 'wrap' },
+      mummy:   { nm: 'Mummy Tower', cost: 125, range: 104, rate: 1.75, dmg: 6,  proj: 'vortex' },
       cat:     { nm: 'Black Cat Tower',   cost: 60,  range: 102, rate: 0.65, dmg: 6,  proj: 'ball' },
-      skeleton: { nm: 'Skeleton Tower', cost: 90, range: 102, rate: 1.25, dmg: 13, proj: 'bone' },
+      skeleton: { nm: 'Skeleton Tower', cost: 90, range: 102, rate: 1.25, dmg: 0,  proj: 'pile' },
       /* the six rotating recruits (see ROSTERS below): only three of
          them share the panel with three originals in any one game.
          Spider — web spray: wraps the kids around the landing point
@@ -1041,16 +1043,21 @@
        pool is much smaller (r 30) and it fades sooner (2.5s), so at
        most one pool is ever up and kids only wade a short stretch */
     var POISON_R = 30, POISON_DUR = 2.5, POISON_DPS = 9;   // witch potion
-    var ROOT_TIME = 2.2;                                   // mummy bandage
+    var VORT_R = [34, 42, 50];                             // mummy sand whirlwind: radius, per level
+    var VORT_DPS = [6, 9, 13];                             // …damage per second inside the vortex, per level
+    var VORT_SLOW = 0.5;                                   // …pace fraction for kids caught in the sand
+    var VORT_LIFE = [2.6, 3.0, 3.4];                       // …seconds a whirlwind chases before it blows out
+    var VORT_SPEED = 240;                                  // …how fast the whirlwind travels, px/s
+    var PILE_BONES = [4, 6, 8];                            // skeleton bone pile: bumps to clear, per level
+    var PILE_DUR = 12;                                     // …seconds a pile sits on the road if nobody bumps it
+    var PILE_BLOCK = 0.8;                                  // …seconds a kid is held up by each bump
     var CRIT_CHANCE = 0.3;                                 // black cat paw ball
-    var KNOCKBACK_DIST = 30;                               // skeleton bone shove, in path length
-    var RICO_RANGE = 76, RICO_FRAC = 0.6;                  // …and its single ricochet hop
     /* -------- tower levels: every monster grows Lv1 -> Lv2 -> Lv3 --------
        A tower levels on ITS OWN chase-away kills: 15 of its own kids
        earn Lv2, 40 total earn Lv3. Each level multiplies damage
        (x1.6 a level), bullet size (x1.4) and body size, trims the
        fire interval by 15% and stretches range by 10%; each monster's
-       special grows too (chain targets, mist radius, root time,
+       special grows too (chain targets, mist radius, whirlwind size,
        crit chance...) — those per-kind numbers live where the tower
        fires and where its candy lands, below. */
     var LV_NEED = [0, 15, 40];
@@ -1394,6 +1401,8 @@
         crows: [],               // scarecrow crows riding a kid, pecking
         rings: [],               // bat screech / werewolf howl rings (visual)
         webs: [],                // spider web splats on the road (visual)
+        vortexes: [],            // mummy sand whirlwinds chasing kids
+        bonePiles: [],           // skeleton bone piles blocking the road
         parts: [],               // explosion / ambient particles
         floats: [],              // KNOCK! texts etc.
         debris: [],
@@ -1527,7 +1536,7 @@
         slowTimer: 0,
         fleeTimer: 0,
         stunTimer: 0,            // franken bolt: frozen by electricity
-        rootTimer: 0,            // mummy bandage: tied up, cannot move
+        blockTimer: 0,           // skeleton bone pile: held up by a bump
         webTimer: 0,             // spider web: wrapped up, crawling
         webF: 0.35,              // ...at this fraction of normal pace
         armorDownTimer: 0,       // slime goo: armour melted, hits bite deeper
@@ -2378,55 +2387,11 @@
           });
         }
         damageKid(k, p.dmg, src);
-      } else if (p.kind === 'wrap') {
-        damageKid(k, p.dmg, src);
-        if (k.mode === 'walk') {
-          k.rootTimer = Math.max(k.rootTimer, p.rootT || ROOT_TIME);
-          k.fleeTimer = 0;
-          addFloat(k.x, k.y - 46, 'Tied Up!', '#efe6cf', 13);
-        }
-        // Lv3 mummy: the bandage roll splits and ties a second kid too
-        if (p.root2) {
-          var k2b = null, k2d = 78;
-          state.kids.forEach(function (o) {
-            if (o === k || o.mode !== 'walk') return;
-            var dd2 = Math.hypot(o.x - k.x, (o.y - 14) - (k.y - 14));
-            if (dd2 < k2d) { k2d = dd2; k2b = o; }
-          });
-          if (k2b) {
-            k2b.rootTimer = Math.max(k2b.rootTimer, p.rootT || ROOT_TIME);
-            k2b.fleeTimer = 0;
-            addFloat(k2b.x, k2b.y - 46, 'Tied Up!', '#efe6cf', 13);
-          }
-        }
       } else if (p.kind === 'ball') {
         var crit = Math.random() < (p.critC != null ? p.critC : CRIT_CHANCE);
         damageKid(k, crit ? p.dmg * 2 : p.dmg, src);
         if (crit) addFloat(k.x, k.y - 46, 'CRIT!', '#ffb03a', 15);
         k.slowTimer = Math.max(k.slowTimer, 0.2);
-      } else if (p.kind === 'bone') {
-        // skeleton bone: a solid crack that shoves the kid back down
-        // the road, then the bone ricochets onward — a second hop at
-        // Lv3 — each hop weaker than the throw itself
-        damageKid(k, p.dmg, src);
-        addFloat(k.x, k.y - 46, 'BONK!', '#f2f2f2', 14);
-        if (k.mode === 'walk') k.dist = Math.max(0, k.dist - (p.kb || KNOCKBACK_DIST));
-        var cur = k, hopDmg = p.dmg * (p.ricoFrac || RICO_FRAC), hitSet = {};
-        hitSet[k.id] = true;
-        for (var hop = 0; hop < (p.ricoN || 1); hop++) {
-          var ric = null, ricD = RICO_RANGE;
-          state.kids.forEach(function (k2) {
-            if (hitSet[k2.id] || k2.mode !== 'walk') return;
-            var d2 = Math.hypot(k2.x - cur.x, (k2.y - 14) - (cur.y - 14));
-            if (d2 < ricD) { ricD = d2; ric = k2; }
-          });
-          if (!ric) break;
-          hitSet[ric.id] = true;
-          burstCandy(ric.x, ric.y - 14, 6, 55, ric.y + 4);
-          damageKid(ric, hopDmg, src);
-          cur = ric;
-          hopDmg *= (p.ricoFrac || RICO_FRAC);
-        }
       } else if (p.kind === 'web') {
         // spider web: the spray bursts over the kids around the
         // landing point — everyone caught is wrapped up and crawls
@@ -2971,7 +2936,43 @@
             tw.cd = fireRate(tw, lvI); // level trims the interval; a werewolf howl nearby trims it further
             tw.throwT = THROW_DUR; // monster plays its candy-throw motion
             var dmg = tw.dmg * LVL_DMG[lvI];
-            if (tw.proj === 'lolli') {
+            if (tw.proj === 'vortex') {
+              // mummy: a swirling sand vortex chases the furthest kid
+              // in range — at Lv3 a second one blows out at another kid
+              var vTargets = [best];
+              if (tw.level === 3) {
+                var vAlt = null, vAltD = -1;
+                state.kids.forEach(function (k) {
+                  if (k.mode !== 'walk' || k === best) return;
+                  var vd = Math.hypot(k.x - tw.x, k.y - tw.y);
+                  if (vd < range && k.dist > vAltD) { vAlt = k; vAltD = k.dist; }
+                });
+                if (vAlt) vTargets.push(vAlt);
+              }
+              vTargets.forEach(function (vt) {
+                state.vortexes.push({
+                  x: tw.x, y: tw.y - 26, tx: vt, r: VORT_R[lvI],
+                  dps: VORT_DPS[lvI], slowF: VORT_SLOW, t: 0,
+                  life: VORT_LIFE[lvI], src: tw, seed: Math.random()
+                });
+              });
+            } else if (tw.proj === 'pile') {
+              // skeleton: lobs a heap of bones onto the road at the
+              // furthest kid in range — at most two piles per tower,
+              // so the field never gets cluttered
+              var livePiles = 0;
+              state.bonePiles.forEach(function (bp) { if (bp.src === tw) livePiles++; });
+              if (livePiles < 2) {
+                var ppt = pointAt(best.dist);
+                state.bonePiles.push({
+                  x: ppt.x, y: ppt.y, dist: best.dist,
+                  bones: PILE_BONES[lvI], maxBones: PILE_BONES[lvI],
+                  t: 0, dur: PILE_DUR, src: tw, seed: Math.random()
+                });
+                addFloat(ppt.x, ppt.y - 26, 'BONES!', '#f2f2f2', 13);
+                burstCandy(ppt.x, ppt.y - 6, 5, 40, ppt.y + 4);
+              }
+            } else if (tw.proj === 'lolli') {
               // ghost tower: the lollipop flies STRAIGHT and pierces —
               // it keeps going through every kid in its line; a Lv3
               // ghost often throws TWO of them at once, fanned apart
@@ -3010,9 +3011,7 @@
                 };
                 if (tw.proj === 'bolt') { pr.chain = [2, 3, 4][lvI]; pr.stun = [0.7, 0.95, 1.2][lvI]; }
                 if (tw.proj === 'potion') { pr.poisR = [30, 38, 46][lvI]; pr.poisDps = POISON_DPS * [1, 1.35, 1.75][lvI]; pr.slowF = [0.72, 0.64, 0.56][lvI]; }
-                if (tw.proj === 'wrap') { pr.rootT = [2.2, 3.0, 3.8][lvI]; pr.root2 = tw.level === 3; }
                 if (tw.proj === 'ball') { pr.critC = [0.3, 0.4, 0.5][lvI]; }
-                if (tw.proj === 'bone') { pr.kb = KNOCKBACK_DIST * [1, 1.15, 1.5][lvI]; pr.ricoFrac = [0.6, 0.7, 0.8][lvI]; pr.ricoN = tw.level === 3 ? 2 : 1; }
                 state.projs.push(pr);
               }
             }
@@ -3202,6 +3201,28 @@
         wb.t += dt;
         if (wb.t >= wb.life) state.webs.splice(wbi, 1);
       }
+      // mummy sand whirlwinds: each one chases its kid, stinging
+      // every kid caught inside it (the half-pace drag is applied
+      // in the kid logic below, next to the mist and puddle slows)
+      for (var vxi = state.vortexes.length - 1; vxi >= 0; vxi--) {
+        var vx = state.vortexes[vxi];
+        vx.t += dt;
+        if (!vx.tx || vx.tx.mode !== 'walk' || vx.t >= vx.life) { state.vortexes.splice(vxi, 1); continue; }
+        var vdx = vx.tx.x - vx.x, vdy = (vx.tx.y - 14) - vx.y, vdd = Math.hypot(vdx, vdy);
+        var vstep = VORT_SPEED * dt;
+        if (vdd > 4) { vx.x += vdx / vdd * Math.min(vstep, vdd); vx.y += vdy / vdd * Math.min(vstep, vdd); }
+        state.kids.forEach(function (k) {
+          if (k.mode !== 'walk') return;
+          if (Math.hypot(k.x - vx.x, (k.y - 12) - vx.y) < vx.r) damageKid(k, vx.dps * dt, vx.src);
+        });
+      }
+      // skeleton bone piles: sit on the road until their bones are
+      // all bumped away or their time runs out
+      for (var bpi = state.bonePiles.length - 1; bpi >= 0; bpi--) {
+        var bp = state.bonePiles[bpi];
+        bp.t += dt;
+        if (bp.t >= bp.dur || bp.bones <= 0) state.bonePiles.splice(bpi, 1);
+      }
 
       // projectiles
       for (var pi = state.projs.length - 1; pi >= 0; pi--) {
@@ -3295,7 +3316,7 @@
         k.bob += dt * (k.mode === 'cheer' ? 10 : 7);
         if (k.slowTimer > 0) k.slowTimer -= dt;
         if (k.stunTimer > 0) k.stunTimer -= dt;
-        if (k.rootTimer > 0) k.rootTimer -= dt;
+        if (k.blockTimer > 0) k.blockTimer -= dt;
         if (k.webTimer > 0) k.webTimer -= dt;
         if (k.armorDownTimer > 0) k.armorDownTimer -= dt;
         if (k.mode === 'walk') {
@@ -3318,8 +3339,8 @@
             }
           } else {
             if (k.rainTime > 0) k.rainTime = Math.max(0, k.rainTime - dt * 0.7);
-            if (k.stunTimer > 0 || k.rootTimer > 0) {
-              // stunned by lightning or tied up in bandages: going nowhere
+            if (k.stunTimer > 0 || k.blockTimer > 0) {
+              // stunned by lightning or held up by a bone pile: going nowhere
             } else if (k.fleeTimer > 0) {
               // scared by the ghost: run back down the road
               k.fleeTimer -= dt;
@@ -3342,6 +3363,28 @@
               for (var szi2 = 0; szi2 < state.slimePuddles.length; szi2++) {
                 var szn2 = state.slimePuddles[szi2];
                 if (Math.hypot(k.x - szn2.x, (k.y - 12) - szn2.y) < szn2.r) { sp *= (szn2.slowF || 0.65); break; }
+              }
+              // caught in a mummy sand whirlwind: the sand drags the
+              // kid to half pace while the vortex lasts
+              for (var vxi2 = 0; vxi2 < state.vortexes.length; vxi2++) {
+                var vx2 = state.vortexes[vxi2];
+                if (Math.hypot(k.x - vx2.x, (k.y - 12) - vx2.y) < vx2.r) { sp *= (vx2.slowF || 0.5); break; }
+              }
+              // a skeleton bone pile on the road ahead: the kid runs
+              // into it, is held up a moment and knocks a bone away
+              // — after the hold-up it bumps the pile again, until
+              // the bones are gone and the road is clear
+              for (var bpi2 = 0; bpi2 < state.bonePiles.length; bpi2++) {
+                var bp2 = state.bonePiles[bpi2];
+                if (bp2.bones <= 0) continue;
+                if (k.dist < bp2.dist && k.dist + sp * dt >= bp2.dist - 2) {
+                  bp2.bones--;
+                  k.blockTimer = PILE_BLOCK;
+                  k.dist = bp2.dist - 2 - (Math.abs(k.id || 0) % 5) * 3;
+                  burstCandy(k.x, k.y - 14, 4, 40, k.y + 4);
+                  addFloat(k.x, k.y - 46, 'BONK!', '#f2f2f2', 13);
+                  break;
+                }
               }
               k.dist += sp * dt;
             }
@@ -5745,14 +5788,6 @@
         ctx.fillStyle = '#c792ff'; circle(-1.8, -0.5, 2.4); ctx.fill();
         ctx.fillStyle = '#e9dcff'; circle(1.8, 3.4, 1.4); ctx.fill();
         ctx.restore();
-      } else if (p.kind === 'wrap') {
-        // mummy tower throws a bandage roll
-        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.t * 8); ctx.scale(ps, ps);
-        ctx.fillStyle = '#efe6cf'; circle(0, 0, 6); ctx.fill();
-        ctx.strokeStyle = '#cbbd97'; ctx.lineWidth = 1.6;
-        ctx.beginPath(); ctx.arc(0, 0, 3.8, 0.5, 4.6); ctx.stroke();
-        ctx.beginPath(); ctx.arc(0, 0, 1.7, 2.2, 6.4); ctx.stroke();
-        ctx.restore();
       } else if (p.kind === 'ball') {
         // black cat tower throws little paw balls
         ctx.save(); ctx.translate(p.x, p.y); ctx.scale(ps, ps);
@@ -5769,17 +5804,6 @@
         ctx.moveTo(2.5, -9); ctx.lineTo(-3.5, 1); ctx.lineTo(-0.5, 1); ctx.lineTo(-2.5, 9); ctx.lineTo(3.5, -1.5); ctx.lineTo(0.5, -1.5);
         ctx.closePath(); ctx.fill();
         ctx.strokeStyle = 'rgba(255,160,30,.85)'; ctx.lineWidth = 1.2; ctx.stroke();
-        ctx.restore();
-      } else if (p.kind === 'bone') {
-        // skeleton tower throws a spinning bone
-        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.t * 9); ctx.scale(ps, ps);
-        ctx.fillStyle = '#f4efe2';
-        ctx.fillRect(-7, -2.2, 14, 4.4);
-        circle(-7, -3.4, 3.1); ctx.fill();
-        circle(-7, 3.4, 3.1); ctx.fill();
-        circle(7, -3.4, 3.1); ctx.fill();
-        circle(7, 3.4, 3.1); ctx.fill();
-        ctx.fillStyle = 'rgba(120,105,70,.35)'; circle(0, 0, 1.6); ctx.fill();
         ctx.restore();
       } else if (p.kind === 'web') {
         // spider tower spits a sticky web blob
@@ -6150,6 +6174,60 @@
         }
         ctx.restore();
       });
+      // mummy sand whirlwinds: a spinning tan spiral with sand
+      // grains whirling around it — it fades as it blows out
+      state.vortexes.forEach(function (vx) {
+        var vfade = Math.min(1, vx.t / 0.2, (vx.life - vx.t) / 0.5);
+        var vr = vx.r * (0.7 + 0.3 * Math.min(1, vx.t / 0.4));
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, vfade);
+        ctx.translate(vx.x, vx.y);
+        ctx.strokeStyle = 'rgba(217,176,106,.85)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+        for (var vs = 0; vs < 3; vs++) {
+          var va0 = vx.t * 6 + vs * 2.1;
+          ctx.beginPath();
+          for (var va = 0; va <= 4.2; va += 0.35) {
+            var vrr = 4 + (va / 4.2) * (vr - 4);
+            var vpx = Math.cos(va0 + va) * vrr, vpy = Math.sin(va0 + va) * vrr * 0.55;
+            if (va === 0) ctx.moveTo(vpx, vpy); else ctx.lineTo(vpx, vpy);
+          }
+          ctx.stroke();
+        }
+        // sand grains whirling around the spiral
+        ctx.fillStyle = 'rgba(232,200,130,.95)';
+        for (var vg = 0; vg < 8; vg++) {
+          var vga = vx.t * 7 + vg * 0.85;
+          var vgr = 6 + ((vg * 7 + vx.seed * 20) % Math.max(1, vr - 6));
+          circle(Math.cos(vga) * vgr, Math.sin(vga) * vgr * 0.55, 1.6 + (vg % 3) * 0.6); ctx.fill();
+        }
+        ctx.restore();
+      });
+      // skeleton bone piles: a little heap of white bones on the
+      // road — drawn bone by bone, so the heap visibly shrinks as
+      // kids bump bones away
+      state.bonePiles.forEach(function (bp) {
+        var bfade = Math.min(1, bp.t / 0.2, (bp.dur - bp.t) / 0.5);
+        var bscale = 0.55 + 0.45 * (bp.bones / bp.maxBones);
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, bfade);
+        ctx.translate(bp.x, bp.y);
+        ctx.fillStyle = 'rgba(12,6,30,.28)';
+        ctx.beginPath(); ctx.ellipse(0, 2, 15 * bscale, 5 * bscale, 0, 0, 6.3); ctx.fill();
+        for (var bi = 0; bi < bp.bones; bi++) {
+          var ba = bp.seed * 6 + bi * 2.4;
+          var bx = Math.cos(ba) * 8 * bscale, by = -2 - (bi % 3) * 2.4 * bscale + Math.sin(ba) * 2 * bscale;
+          ctx.save();
+          ctx.translate(bx, by); ctx.rotate(ba);
+          ctx.fillStyle = '#f4efe2';
+          ctx.fillRect(-6, -1.8, 12, 3.6);
+          circle(-6, -2.6, 2.4); ctx.fill();
+          circle(-6, 2.6, 2.4); ctx.fill();
+          circle(6, -2.6, 2.4); ctx.fill();
+          circle(6, 2.6, 2.4); ctx.fill();
+          ctx.restore();
+        }
+        ctx.restore();
+      });
       // franken chain lightning: jagged arcs between the zapped kids
       state.zaps.forEach(function (zp) {
         ctx.save();
@@ -6312,11 +6390,11 @@
       { kind: 'spider', nm: 'Spider Tower', desc: 'Web spray · Heavy slow' },
       { kind: 'witch', nm: 'Witch Tower', desc: 'Poison mist potions' },
       { kind: 'zombie', nm: 'Zombie Tower', desc: 'Thrown arm · Hits twice' },
-      { kind: 'mummy', nm: 'Mummy Tower', desc: 'Bandage wrap · Roots kids' },
+      { kind: 'mummy', nm: 'Mummy Tower', desc: 'Sand whirlwind · Slows + stings' },
       { kind: 'bat', nm: 'Bat Tower', desc: 'Sonic ring · Hits all around' },
       { kind: 'werewolf', nm: 'Werewolf Tower', desc: 'Howl speeds towers · Giant-wolf pounce' },
       { kind: 'cat', nm: 'Black Cat Tower', desc: 'Rapid paw balls · Crits' },
-      { kind: 'skeleton', nm: 'Skeleton Tower', desc: 'Bone toss · Knockback + bounce' },
+      { kind: 'skeleton', nm: 'Skeleton Tower', desc: 'Bone pile · Blocks the road' },
       { kind: 'scarecrow', nm: 'Scarecrow Tower', desc: 'Pet crow · Pecks one kid' },
       { kind: 'slime', nm: 'Slime Tower', desc: 'Goo puddle · Slows + melts armor' }
     ];
@@ -6376,7 +6454,7 @@
       if (kind === 'franken') return lv === 1 ? 'Chain lightning hits 2 \u2192 3 kids \u00b7 Stun 0.7s \u2192 0.95s' : 'Chain lightning hits 3 \u2192 4 kids \u00b7 Stun 0.95s \u2192 1.2s';
       if (kind === 'ghost') return lv === 1 ? 'Lollipops pierce a whole row \u2014 faster & stronger' : 'Now throws TWO piercing lollipops at once!';
       if (kind === 'witch') return lv === 1 ? 'Poison mist radius 30 \u2192 38 \u00b7 stronger poison & slow' : 'Poison mist radius 38 \u2192 46 \u00b7 stronger poison & slow';
-      if (kind === 'mummy') return lv === 1 ? 'Bandage root 2.2s \u2192 3.0s' : 'Bandage root 3.0s \u2192 3.8s \u00b7 wraps TWO kids at once!';
+      if (kind === 'mummy') return lv === 1 ? 'Sand whirlwind radius 34 \u2192 42 \u00b7 stronger sand bite' : 'Sand whirlwind radius 42 \u2192 50 \u00b7 stronger bite \u00b7 TWO whirlwinds at once!';
       if (kind === 'cat') return lv === 1 ? 'Crit chance 30% \u2192 40%' : 'Crit chance 40% \u2192 50% \u00b7 sometimes throws 2 paw balls!';
       if (kind === 'spider') return lv === 1 ? 'Web slow \u00d70.35 \u2192 \u00d70.30 \u00b7 lasts 2.5s \u2192 3s' : 'Web slow \u00d70.30 \u2192 \u00d70.25 \u00b7 lasts 3s \u2192 3.5s \u00b7 wider web splash';
       if (kind === 'bat') return lv === 1 ? 'Sonic ring radius 85 \u2192 94' : 'Sonic ring radius 94 \u2192 102 \u00b7 louder screech';
@@ -6384,7 +6462,7 @@
       if (kind === 'zombie') return lv === 1 ? 'Thrown arm flies 140 \u2192 154px out and back' : 'Thrown arm flies 154 \u2192 168px out and back';
       if (kind === 'werewolf') return lv === 1 ? 'Howl: +30% tower speed for 5s \u2192 5.5s \u00b7 radius 120 \u2192 132' : 'Howl: +30% tower speed for 5.5s \u2192 6s \u00b7 radius 132 \u2192 144';
       if (kind === 'slime') return lv === 1 ? 'Armor melt lasts 4s \u2192 4.75s · Goo puddle 36 \u2192 42, stickier' : 'Armor melt lasts 4.75s \u2192 5.5s · Goo puddle 42 \u2192 48, stickier';
-      return lv === 1 ? 'Bone bounce damage 60% \u2192 70%' : 'Bone bounce damage 70% \u2192 80% \u00b7 bounces to 2 kids \u00b7 bigger knockback';
+      return lv === 1 ? 'Bone pile 4 \u2192 6 bones \u00b7 blocks kids longer' : 'Bone pile 6 \u2192 8 bones \u00b7 blocks kids longer';
     }
     function openUpPanel(tw) {
       state.upPanel = tw;
@@ -6585,7 +6663,20 @@
         return;
       }
       // tapping one of your own monsters: one that earned a level
-      // opens its upgrade panel; any other shows its level progress
+      // opens its upgrade panel; any other shows its level progress.
+      // The gold LV UP! badge bouncing above a tower is small and
+      // moves, so it gets its own generous tap zone first — the same
+      // position math as the draw code in drawSites (badge 54x20 at
+      // sy - 17, bouncing +-2.5) plus padding — opening the exact
+      // same upgrade panel as tapping the tower itself
+      var badgeTw = null;
+      state.towers.forEach(function (tw) {
+        if (!tw.upReady) return;
+        var mTopB = MONSTER_TOP[tw.kind] ? MONSTER_TOP[tw.kind][tw.level - 1] : -46;
+        var byB = tw.y + mTopB * 1.3 * LVL_SCALE[tw.level - 1] - 26;
+        if (Math.abs(x - tw.x) <= 39 && Math.abs(y - byB) <= 25) badgeTw = tw;
+      });
+      if (badgeTw) { openUpPanel(badgeTw); return; }
       var tappedTw = null, tappedD = 40;
       state.towers.forEach(function (tw) {
         var d = Math.hypot(tw.x - x, (tw.y - 12) - y);
