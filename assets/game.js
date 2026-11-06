@@ -1404,6 +1404,8 @@
         freePickDone: false,     // the free first-tower picker has popped
         choosing: false,         // tower-choice popup is up (game frozen)
         pendingKind: null,       // monster picked, waiting for a gravestone tap
+        placeSite: null,       // "place here" mode: the shaking grave a tapped card builds on
+        pickHintShown: false,  // the new-flow explainer float has shown once this run
         houseCd: 1.0,
         houseHold: true,         // castle cannon starts stood-down: the plaza is empty
         houseFlash: 0,
@@ -2749,14 +2751,49 @@
       if (banked) {
         levelUpSound();
         addFloat(225, 90, 'PICK! ×' + state.picks, '#ffd23e', 16);
+        // first banked pick of the run: spell out the new flow
+        // once — the shaking graves and badges do the shouting
+        // after that
+        if (!state.pickHintShown) {
+          state.pickHintShown = true;
+          addFloat(225, 114, 'Tap a tower to upgrade it, or a shaking grave to place a new one!', '#ffe9a8', 13);
+        }
         updatePickBtn();
         syncHUD(true);
       }
     }
+    /* pick cues: while a pick is banked the field itself shouts
+       about it — empty graves shake wildly and every sub-max
+       tower wears a gold LV UP! badge. The cue only runs while
+       the game is actually playing (not paused, no popup up, no
+       card in flight — the in-flight chevrons take over then). */
+    function pickCueActive() {
+      return started && playing && state.phase === 'playing' && !state.choosing && !state.pendingKind && state.picks > 0;
+    }
+    function hasUpgradeableTower() {
+      for (var i = 0; i < state.towers.length; i++) if (state.towers[i].level < 3) return true;
+      return false;
+    }
+    function hasEmptySite() {
+      for (var i = 0; i < SITES.length; i++) if (SITES[i].phase === 'empty') return true;
+      return false;
+    }
+    /* badge geometry, shared by the draw code and the tap
+       handler: the badge centre sits 17px above the level stars,
+       which ride on the tower's drawn top at steady-state size
+       (the grow-animation swell is ignored here — the generous
+       hit padding below covers the few pixels it moves). */
+    function badgeCenter(tw) {
+      var mTop = MONSTER_TOP[tw.kind] ? MONSTER_TOP[tw.kind][tw.level - 1] : -46;
+      var mScale = 1.3 * LVL_SCALE[tw.level - 1];
+      return { x: tw.x, y: tw.y + mTop * mScale - 9 - 17 };
+    }
     /* open the six-card monster picker. 'free' is the free first
        tower at game start (no pick spent, cannot be skipped);
        'pick' spends one banked pick — the player may also close
-       it with Later and keep the pick for another moment. */
+       it with Later and keep the pick for another moment.
+       'place' is the tap-a-shaking-grave shortcut: the picked
+       card builds on that grave at once, no second tap. */
     function openChoice(mode) {
       state.pickMode = mode;
       state.choosing = true;
@@ -2765,11 +2802,22 @@
       var ch = document.getElementById('towerChoice');
       if (ch) { ch.classList.add('show'); ch.setAttribute('aria-hidden', 'false'); }
       var ct = document.getElementById('choiceTitle');
-      if (ct) ct.textContent = mode === 'pick' ? 'Pick a Monster!' : 'Choose Your Defense Monster';
+      if (ct) ct.textContent = mode === 'free' ? 'Choose Your Defense Monster' : 'Pick a Monster!';
       var cs = document.getElementById('choiceSub');
-      if (cs) cs.style.display = mode === 'pick' ? '' : 'none';
+      if (cs) {
+        cs.style.display = (mode === 'pick' || mode === 'place') ? '' : 'none';
+        if (mode === 'place') cs.textContent = 'Tap a card — it builds on the shaking grave right away!';
+        else if (mode === 'pick') {
+          // a banked pick with nothing to spend it on: say so
+          // plainly instead of letting the player guess — the
+          // pick stays banked, closing keeps it
+          cs.textContent = (!hasUpgradeableTower() && !hasEmptySite())
+            ? 'Nothing to upgrade or place right now — close this and keep your pick for later!'
+            : 'Tap a card, then tap one of that monster on the field to upgrade it — or a gravestone to place another!';
+        }
+      }
       var cb = document.getElementById('btnChoiceClose');
-      if (cb) cb.style.display = mode === 'pick' ? '' : 'none';
+      if (cb) cb.style.display = (mode === 'pick' || mode === 'place') ? '' : 'none';
       happySound();
       syncHUD(true);
     }
@@ -5469,6 +5517,9 @@
     }
     function drawSites(t) {
       var canPlace = !!(started && playing && state.phase === 'playing' && state.pendingKind);
+      // a banked pick makes every empty grave shake wildly until
+      // the pick is spent — the unmissable "tap me" cue
+      var wildShake = pickCueActive() && hasEmptySite();
       SITES.forEach(function (site) {
         if (site.phase === 'empty') {
           if (canPlace) {
@@ -5489,11 +5540,19 @@
           // the running check so a stone frozen mid-shiver by a
           // pause renders upright and still, not stuck tilted
           var shRot = 0, shX = 0;
-          if (!reduceMotion && playing && state.phase === 'playing' && site.shakeAge >= 0) {
-            var shp = Math.min(1, site.shakeAge / SHAKE_DUR);
-            var shAmp = 1 - shp;
-            shRot = Math.sin(shp * Math.PI * 5) * shAmp * 0.05;
-            shX = Math.sin(shp * Math.PI * 7) * shAmp * 0.8;
+          if (!reduceMotion && playing && state.phase === 'playing') {
+            if (wildShake) {
+              // wild shake: hard, fast, continuous — every empty
+              // grave at once, each on its own phase so they do
+              // not all lean the same way
+              shRot = Math.sin(t * 14 + site.x * 1.3) * 0.11;
+              shX = Math.sin(t * 17 + site.y * 1.1) * 3;
+            } else if (site.shakeAge >= 0) {
+              var shp = Math.min(1, site.shakeAge / SHAKE_DUR);
+              var shAmp = 1 - shp;
+              shRot = Math.sin(shp * Math.PI * 5) * shAmp * 0.05;
+              shX = Math.sin(shp * Math.PI * 7) * shAmp * 0.8;
+            }
           }
           drawSiteStone(site.x + shX, site.y, shRot, site.style);
         } else if (site.phase === 'falling') {
@@ -5567,6 +5626,22 @@
           ctx.strokeText(stxt, site.x, sy);
           ctx.fillStyle = '#ffd23e';
           ctx.fillText(stxt, site.x, sy);
+          // a banked pick puts the gold LV UP! badge back over
+          // every tower below level 3 — tapping the badge (or
+          // the tower) upgrades it on the spot, no picker. The
+          // badge bounces gently and sits 17px above the stars,
+          // the same spot it used to sit before the points rework
+          if (pickCueActive() && tw2 && tw2.level < 3) {
+            var bBy = sy - 17 + (reduceMotion ? 0 : Math.sin(t * 5 + site.x * 0.1) * 2.5);
+            ctx.fillStyle = '#ffd23e';
+            rr(site.x - 27, bBy - 10, 54, 20, 10); ctx.fill();
+            ctx.strokeStyle = 'rgba(50,16,0,.85)'; ctx.lineWidth = 2;
+            rr(site.x - 27, bBy - 10, 54, 20, 10); ctx.stroke();
+            ctx.font = '900 12px "Baloo 2", sans-serif';
+            ctx.fillStyle = '#241245';
+            ctx.fillText('LV UP!', site.x, bBy + 0.5);
+            ctx.font = '800 11px "Baloo 2", sans-serif';
+          }
           // a werewolf howl still ringing in this tower: twin gold
           // chevrons bob at its shoulders while the speed-up lasts
           if (tw2 && tw2.buffT > 0) {
@@ -6835,6 +6910,31 @@
       d.innerHTML = miniSVG[c.kind] + '<div class="nm">' + c.nm + '</div><div class="nm" style="color:var(--ink-dim);font-weight:500">' + c.desc + '</div>';
       d.addEventListener('click', function () {
         if (!state.choosing) return;
+        // "place here" mode: the card builds on the shaking grave
+        // that was tapped — at once, no second tap. If that grave
+        // filled meanwhile (it can't — the game is frozen while
+        // choosing), fall back to the normal pick flow.
+        if (state.pickMode === 'place') {
+          var site = state.placeSite;
+          if (site && site.phase === 'empty') {
+            site.kind = c.kind;
+            site.phase = 'falling';
+            site.anim = 0;
+            state.placeSite = null;
+            state.pickMode = null;
+            state.choosing = false;
+            choiceEl.classList.remove('show');
+            choiceEl.setAttribute('aria-hidden', 'true');
+            if (soundOn) { ensureAudio(); popSound(); }
+            state.picks = Math.max(0, state.picks - 1);
+            state.pendingPick = false;
+            updatePickBtn();
+            syncHUD(true);
+            return;
+          }
+          state.placeSite = null;
+          state.pickMode = 'pick';
+        }
         state.pendingKind = c.kind;
         // in pick mode the pick is now in flight: it is spent only
         // when the player taps a tower to upgrade it, or a
@@ -6967,11 +7067,13 @@
         updatePickBtn();
       }
     });
-    /* the picker close button ("Later"): only offered on a pick,
-       never on the free first tower — closing keeps the banked
-       pick for later, it is never spent without an action. */
+    /* the picker close button ("Later"): only offered on a pick
+       or a "place here" pick, never on the free first tower —
+       closing keeps the banked pick for later, it is never spent
+       without an action. */
     document.getElementById('btnChoiceClose').addEventListener('click', function () {
-      if (state.pickMode !== 'pick') return;
+      if (state.pickMode !== 'pick' && state.pickMode !== 'place') return;
+      state.placeSite = null;
       state.choosing = false;
       state.pickMode = null;
       var ch = document.getElementById('towerChoice');
@@ -7140,9 +7242,25 @@
         tapSite(x, y);
         return;
       }
-      // tapping one of your own monsters, outside a pick, shows
-      // only its level info now — there is no upgrade panel any
-      // more, and levels come from banked picks, never from a tap
+      // a banked pick makes the badge (and the tower under it) a
+      // one-tap upgrade: the badge is checked first, because it
+      // floats above the tower's body and the body radius below
+      // does not reach it. The check mirrors the draw condition
+      // exactly (pickCueActive), so a badge you can see is a
+      // badge you can tap, and vice versa
+      if (pickCueActive()) {
+        var badgeTw = null;
+        state.towers.forEach(function (tw) {
+          if (tw.level >= 3) return;
+          var bc = badgeCenter(tw);
+          if (Math.abs(x - bc.x) <= 39 && Math.abs(y - bc.y) <= 25) badgeTw = tw;
+        });
+        if (badgeTw) { doUpgrade(badgeTw); return; }
+      }
+      // tapping one of your own monsters, outside a pick: with a
+      // pick banked the tap upgrades it on the spot (the badge
+      // above its head says so); with no pick banked it only
+      // shows its level info — there is no upgrade panel any more
       var tappedTw = null, tappedD = 40;
       state.towers.forEach(function (tw) {
         var d = Math.hypot(tw.x - x, (tw.y - 12) - y);
@@ -7150,6 +7268,7 @@
       });
       if (tappedTw) {
         if (tappedTw.level >= 3) addFloat(tappedTw.x, tappedTw.y - 62, 'Lv 3 MAX \u2605\u2605\u2605', '#ffd23e', 14);
+        else if (pickCueActive()) doUpgrade(tappedTw);
         else addFloat(tappedTw.x, tappedTw.y - 62, 'Lv ' + tappedTw.level + ' \u00b7 chased ' + tappedTw.kills + ' kids', '#ffe9a8', 13.5);
         return;
       }
@@ -7172,11 +7291,16 @@
         return;
       }
       if (!state.pendingKind) {
-        // no monster selected: tapping a stone explains how far
-        // off the next pick is (or points at the PICK! button)
+        // no monster selected: with a pick banked, tapping a
+        // shaking grave opens the picker in "place here" mode —
+        // the picked card builds on THIS grave at once, no
+        // second tap. With no pick banked the tap explains how
+        // far off the next one is.
         if (bd <= 60) {
-          if (state.picks > 0) addFloat(best.x, best.y - 48, 'Tap the PICK! button up top to use your pick!', '#ffd23e', 14);
-          else {
+          if (state.picks > 0 && !state.choosing) {
+            state.placeSite = best;
+            openChoice('place');
+          } else if (state.picks <= 0) {
             var rem = PICK_EVERY - state.prog;
             addFloat(best.x, best.y - 48, 'Chase away ' + rem + ' more for a PICK!', '#ff9a8a', 14);
           }
