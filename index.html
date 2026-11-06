@@ -658,6 +658,24 @@
          tap on the divider goes to endless, with no gap or overlap */
       .mode-hot-challenge { left: 8.9%; top: 50.1%; width: 81.5%; height: 12.7%; }
       .mode-hot-endless { left: 9.0%; top: 63.2%; width: 81.4%; height: 12.6%; }
+      /* ---------- full-bleed mode screen: while the mode popup is
+         open the top button bar goes away and the stage loses its
+         frame, so the poster reads as one full-screen page, not a
+         box on a page. The body class is added by showModeChoice()
+         in game.js and removed by chooseMode(); the bar is untouched
+         before the mode screen opens (Start Game is how the player
+         gets there) and comes back the moment a mode is picked.
+         The poster itself stays contained at 940:1673 (title and
+         both buttons fully visible, never cropped); the side
+         pillars are the stage's dark purple #241453, sampled to
+         match the poster's own dark-purple edges, and the body
+         background flattens to the same colour so there are no
+         light margins anywhere. ---------- */
+      body.mode-open .controls { display: none; }
+      body.mode-open .screen { padding-top: 0; gap: 0; }
+      body.mode-open .wrap { padding: 0; max-width: none; }
+      body.mode-open { background: #241453; }
+      body.mode-open .stage { border: 0; border-radius: 0; box-shadow: none; }
       /* ---------- tower upgrade panel (tap a tower wearing LV UP!) ---------- */
       .upanel {
         position: absolute;
