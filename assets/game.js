@@ -7069,7 +7069,7 @@
     }
     function startGame() {
       // mode first: on a fresh page load the player has not picked
-      // one yet, so START stops at the two big mode buttons and
+      // one yet, so the game opens on the two big mode buttons and
       // only continues once one is tapped (chooseMode below).
       // Restart replays the same mode, so this gate never fires
       // mid-session — modeChosen is set once and stays set.
@@ -7090,12 +7090,74 @@
        Restart replays the same mode (runMode lives outside
        resetGame's state); only a fresh page load — back at the
        start screen — asks again. */
+    /* mode overlay geometry: the poster is shown with object-fit:
+       cover, object-position: top, so on any screen whose ratio
+       differs from the poster's 940:1673 the displayed image rect
+       is NOT the container rect (tall screens crop the sides,
+       short screens crop the bottom). The two mode buttons and
+       Dracula's bubble are positioned from the DISPLAYED rect,
+       computed here from the container size and the poster's
+       natural size — so the tap zones stay on the drawn plaques
+       and the bubble stays beside Dracula's head on every phone.
+       Plaque fractions are the re-measured values for the current
+       render (gold x .090–.900, y .510–.645; purple x .090–.905,
+       y .635–.765; the zones meet at the .640 split). The bubble
+       sits at image fractions left .03, top .205, width .58 —
+       just below the painted title (ends ~.19) and above the gold
+       plaque (starts .51), its tail (at ~77% of its width)
+       pointing down-right at Dracula's head. Its left edge is
+       clamped into the container on tall screens, where the
+       image's own left edge is cropped off-screen. */
+    var MODE_POSTER_W = 940, MODE_POSTER_H = 1673;
+    function layoutModeOverlay() {
+      var poster = document.querySelector('.mode-poster');
+      var img = poster && poster.querySelector('img');
+      if (!poster) return;
+      var cw = poster.clientWidth, ch = poster.clientHeight;
+      if (!cw || !ch) return;
+      var iw = (img && img.naturalWidth) || MODE_POSTER_W;
+      var ih = (img && img.naturalHeight) || MODE_POSTER_H;
+      var scale = Math.max(cw / iw, ch / ih); // cover
+      var dw = iw * scale, dh = ih * scale;
+      var ox = (cw - dw) / 2, oy = 0; // top-aligned
+      function place(el, fx0, fy0, fx1, fy1) {
+        if (!el) return;
+        el.style.left = (ox + fx0 * dw) + 'px';
+        el.style.top = (oy + fy0 * dh) + 'px';
+        el.style.width = ((fx1 - fx0) * dw) + 'px';
+        el.style.height = ((fy1 - fy0) * dh) + 'px';
+      }
+      place(document.getElementById('btnModeChallenge'), 0.090, 0.510, 0.900, 0.640);
+      place(document.getElementById('btnModeEndless'), 0.090, 0.640, 0.905, 0.765);
+      var bub = poster.querySelector('.dracula-bubble');
+      if (bub) {
+        var bw = Math.min(0.58 * dw, 290);
+        var bl = Math.max(8, ox + 0.03 * dw);
+        if (bl + bw > cw - 8) bw = Math.max(120, cw - 8 - bl);
+        bub.style.left = bl + 'px';
+        bub.style.top = (oy + 0.205 * dh) + 'px';
+        bub.style.width = bw + 'px';
+      }
+    }
+    var dracBubbleShown = false;
     function showModeChoice() {
       var mc = document.getElementById('modeChoice');
       if (mc) { mc.classList.add('show'); mc.setAttribute('aria-hidden', 'false'); }
       // full-bleed mode screen: hide the top button bar and the stage
       // frame while choosing (restored by chooseMode below)
       document.body.classList.add('mode-open');
+      layoutModeOverlay();
+      // Dracula's bubble pops in on the mode page now (it used to
+      // live on the retired start page): once per page load, a beat
+      // after the poster appears, so the pop plays visibly instead
+      // of arriving half-finished behind the loading screen.
+      if (!dracBubbleShown) {
+        dracBubbleShown = true;
+        setTimeout(function () {
+          var b = document.querySelector('.mode-poster .dracula-bubble');
+          if (b) b.classList.add('show');
+        }, 400);
+      }
     }
     function chooseMode(mode) {
       runMode = mode;
@@ -7108,6 +7170,19 @@
     }
     document.getElementById('btnModeChallenge').addEventListener('click', function () { chooseMode('challenge'); });
     document.getElementById('btnModeEndless').addEventListener('click', function () { chooseMode('endless'); });
+    /* keep the overlay aligned if the viewport changes while the
+       mode screen is open (rotation, webview resize): the poster
+       re-crops, so the zones and the bubble are re-measured. */
+    window.addEventListener('resize', function () {
+      var mc = document.getElementById('modeChoice');
+      if (mc && mc.classList.contains('show')) layoutModeOverlay();
+    });
+    window.addEventListener('orientationchange', function () {
+      setTimeout(function () {
+        var mc = document.getElementById('modeChoice');
+        if (mc && mc.classList.contains('show')) layoutModeOverlay();
+      }, 150);
+    });
     /* the picker close button ("Later"): only offered on a
        "place here" pick, never on the free first tower —
        closing keeps the banked pick for later, it is never spent
@@ -7123,11 +7198,9 @@
     });
     var bs = document.getElementById('btnStart');
     if (bs) bs.addEventListener('click', startGame); // overlay removed 2026-10-29
-    /* splash page: the START button on the cover art is wired by the
-       little bootstrap script right after the splash markup; once the
-       engine has booted it calls window.__tdEnter (set at the bottom
-       of this script), which dismisses the splash and drops straight
-       into the game (popping the free first tower choice, as before) */
+    /* the top Start button: before the game starts it enters (which
+       now just opens the mode poster — the start page is retired);
+       once started it pauses and resumes. */
     btnPlay.addEventListener('click', function () {
       ensureAudio();
       if (!started) { startGame(); return; }
@@ -7141,8 +7214,8 @@
        calling this (only PLAY AGAIN does) */
     function restartRun() {
       // a restart before any mode was ever picked (top Restart
-      // tapped before START) asks for the mode first instead of
-      // starting a modeless run
+      // tapped before a mode is chosen) asks for the mode first
+      // instead of starting a modeless run
       if (!modeChosen) { showModeChoice(); return; }
       ensureAudio();
       stopWinMusic(); // leaving the kids-win screen: back to the normal loop
@@ -7589,8 +7662,11 @@
     }
     requestAnimationFrame(loop);
 
-    /* hand the splash START button its action, and honour a tap that
-       landed before the boot finished */
+    /* entry point after the loading screen: the start page is
+       retired, so this fires automatically when the boot finishes
+       (the boot-progress script calls it, or sets the pending flag
+       below if the engine arrived late) — it drops straight into
+       the mode poster. */
     window.__tdEnter = function () {
       document.getElementById('splash').classList.add('gone');
       startGame();
