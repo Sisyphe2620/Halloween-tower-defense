@@ -1399,13 +1399,16 @@
         kills: 0,                // kids driven away, total
         prog: 0,                 // points toward the next pick (1 per kid chased away)
         picks: 0,                // banked picks (each = one placement or one upgrade)
-        pickMode: null,          // how the open picker was reached: null | 'free' | 'pick'
-        pendingPick: false,      // a picked card is waiting for a field tap
+        healKills: 0,            // endless-only: kills toward the next +1 castle repair (10 kills = +1 HP)
+        pickMode: null,          // how the open picker was reached: null | 'free' | 'place'
         freePickDone: false,     // the free first-tower picker has popped
         choosing: false,         // tower-choice popup is up (game frozen)
         pendingKind: null,       // monster picked, waiting for a gravestone tap
         placeSite: null,       // "place here" mode: the shaking grave a tapped card builds on
-        pickHintShown: false,  // the new-flow explainer float has shown once this run
+        graveHintShown: false, // the shaking-grave hint bubble has shown once this run
+        towerHintShown: false, // the LV UP hint bubble has shown once this run
+        graveHintActive: false, // the shaking-grave hint bubble is currently showing
+        towerHintActive: false, // the LV UP hint bubble is currently showing
         houseCd: 1.0,
         houseHold: true,         // castle cannon starts stood-down: the plaza is empty
         houseFlash: 0,
@@ -2325,6 +2328,7 @@
           k.mode = 'happy'; k.happyTimer = 0;
           state.kills++; noteComboKill();
           state.prog++;
+          endlessHeal();
           addFloat(k.x, k.y - 40, 'Progress +1', '#ffd23e', 14);
           happySound();
         }
@@ -2348,6 +2352,21 @@
       return dmg * (1 - a);
     }
 
+    /* endless-only slow castle repair: every 10 kids chased away
+       mends 1 HP on the house (never above HOUSE_MAX). At full HP
+       the 10th kill is wasted and the count resets — no banking.
+       Challenge mode never heals. Called from the same three kill
+       sites as the points pool, so it counts exactly the same kills. */
+    function endlessHeal() {
+      if (runMode !== 'endless') return;
+      state.healKills++;
+      if (state.healKills < 10) return;
+      state.healKills = 0;
+      if (state.houseHP < HOUSE_MAX) {
+        state.houseHP = Math.min(HOUSE_MAX, state.houseHP + 1);
+        addFloat(225, 200, '+1', '#7ee06f', 15);
+      }
+    }
     /* ---------------- tower hit effects ----------------
        One shared damage path: any tower candy that drops a walking
        kid sends it home happy and feeds the tower-unlock progress,
@@ -2364,6 +2383,7 @@
         k.mode = 'happy'; k.happyTimer = 0;
         state.kills++; noteComboKill();
         state.prog++;
+        endlessHeal();
         addFloat(k.x, k.y - 40, 'Progress +1', '#ffd23e', 14);
         happySound();
         // the tower whose candy landed the chase-away banks the
@@ -2728,12 +2748,12 @@
        (state.prog). The FIRST tower is free — the choice panel
        pops the moment the game starts, before any kid needs to
        be driven off. After that, every PICK_EVERY points banks
-       one PICK (extras stack: a second 15 while one waits shows
-       x2 on the button, so nothing is ever lost); the pick itself
-       waits on the gold PICK! button in the top bar until the
-       player taps it — no auto-popup mid-wave any more. Banking
-       needs no empty gravestone, because a pick can also be spent
-       levelling a tower that is already standing. */
+       one PICK (extras stack, so nothing is ever lost). A banked
+       pick is spent by tapping a tower (or its LV UP! badge) to
+       upgrade it, or a shaking grave to place a new monster —
+       the field itself shouts about it, no button needed.
+       Banking needs no empty gravestone, because a pick can
+       also be spent levelling a tower that is already standing. */
     function checkUnlock() {
       if (state.phase !== 'playing') return;
       if (!state.freePickDone) {
@@ -2751,14 +2771,19 @@
       if (banked) {
         levelUpSound();
         addFloat(225, 90, 'PICK! ×' + state.picks, '#ffd23e', 16);
-        // first banked pick of the run: spell out the new flow
-        // once — the shaking graves and badges do the shouting
-        // after that
-        if (!state.pickHintShown) {
-          state.pickHintShown = true;
-          addFloat(225, 114, 'Tap a tower to upgrade it, or a shaking grave to place a new one!', '#ffe9a8', 13);
+        // first-time hint bubbles (once per run each): a bubble
+        // over a shaking grave the first time a pick banks while
+        // a grave is empty, and a bubble over a badge tower the
+        // first time a pick banks while a tower can still level
+        // up. Each shows once and never again that run.
+        if (!state.graveHintShown && hasEmptySite()) {
+          state.graveHintShown = true;
+          state.graveHintActive = true;
         }
-        updatePickBtn();
+        if (!state.towerHintShown && hasUpgradeableTower()) {
+          state.towerHintShown = true;
+          state.towerHintActive = true;
+        }
         syncHUD(true);
       }
     }
@@ -2790,10 +2815,9 @@
     }
     /* open the six-card monster picker. 'free' is the free first
        tower at game start (no pick spent, cannot be skipped);
-       'pick' spends one banked pick — the player may also close
-       it with Later and keep the pick for another moment.
        'place' is the tap-a-shaking-grave shortcut: the picked
-       card builds on that grave at once, no second tap. */
+       card builds on that grave at once, no second tap, and the
+       player may close it with Later and keep the pick. */
     function openChoice(mode) {
       state.pickMode = mode;
       state.choosing = true;
@@ -2805,19 +2829,11 @@
       if (ct) ct.textContent = mode === 'free' ? 'Choose Your Defense Monster' : 'Pick a Monster!';
       var cs = document.getElementById('choiceSub');
       if (cs) {
-        cs.style.display = (mode === 'pick' || mode === 'place') ? '' : 'none';
+        cs.style.display = mode === 'place' ? '' : 'none';
         if (mode === 'place') cs.textContent = 'Tap a card — it builds on the shaking grave right away!';
-        else if (mode === 'pick') {
-          // a banked pick with nothing to spend it on: say so
-          // plainly instead of letting the player guess — the
-          // pick stays banked, closing keeps it
-          cs.textContent = (!hasUpgradeableTower() && !hasEmptySite())
-            ? 'Nothing to upgrade or place right now — close this and keep your pick for later!'
-            : 'Tap a card, then tap one of that monster on the field to upgrade it — or a gravestone to place another!';
-        }
       }
       var cb = document.getElementById('btnChoiceClose');
-      if (cb) cb.style.display = (mode === 'pick' || mode === 'place') ? '' : 'none';
+      if (cb) cb.style.display = mode === 'place' ? '' : 'none';
       happySound();
       syncHUD(true);
     }
@@ -3666,6 +3682,7 @@
               k.mode = 'happy'; k.happyTimer = 0;
               state.kills++; noteComboKill();
               state.prog++;
+              endlessHeal();
               addFloat(k.x, k.y - 40, 'All Full!', '#ff8fb5', 14);
               happySound();
               syncHUD(true);
@@ -6309,12 +6326,9 @@
     /* ---------- first-run tutorial bubble (canvas) ---------- */
     function drawTutorial(t) {
       var bob = Math.sin(t * 3) * 3;
-      // in pick mode the bubble reminds the player of BOTH uses of
-      // the picked card (upgrade a tower of that kind, or place
-      // another on a grave) — so it runs a little wider than the
-      // plain first-tower placement hint
-      var isPick = state.pickMode === 'pick';
-      var tw = isPick ? 330 : 256, th = 36, tx = 225 - tw / 2, ty = 304 + bob;
+      // the free first tower: the bubble points at the nearest
+      // gravestone and names the picked monster
+      var tw = 256, th = 36, tx = 225 - tw / 2, ty = 304 + bob;
       ctx.save();
       ctx.fillStyle = 'rgba(24,14,54,.93)';
       rr(tx, ty, tw, th, 12); ctx.fill();
@@ -6333,9 +6347,52 @@
       ctx.beginPath();
       ctx.moveTo(px - 10, ty + th - 1); ctx.lineTo(px + 10, ty + th - 1); ctx.lineTo(px, ty + th + 10); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#ffe9a8';
-      ctx.font = isPick ? '700 13px "Baloo 2", sans-serif' : '700 14.5px "Baloo 2", sans-serif';
+      ctx.font = '700 14.5px "Baloo 2", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(isPick ? ('Tap a ' + TOWER_DEFS[state.pendingKind].nm.replace(/ Tower$/, '') + ' to upgrade — or a grave!') : ('Tap a gravestone to place the ' + TOWER_DEFS[state.pendingKind].nm + '!'), 225, ty + th / 2 + 1);
+      ctx.fillText('Tap a gravestone to place the ' + TOWER_DEFS[state.pendingKind].nm + '!', 225, ty + th / 2 + 1);
+      ctx.restore();
+    }
+
+    /* ---------- first-time pick hints (once per run each) ----------
+       Small tutorial-style bubbles: one over a shaking grave the
+       first time a pick banks while a grave is empty, one over a
+       badge tower the first time a pick banks while a tower can
+       still level up. Each shows once and never again that run;
+       the grave bubble goes when the player taps a grave to open
+       the picker or a pick is spent, the tower bubble when any
+       tower is upgraded. Both may show at once — they sit in
+       different places. Gated on pickCueActive so a bubble you
+       can see is always live, and hidden while a popup is up. */
+    function drawHintBubble(cx, cy, text) {
+      ctx.font = '700 13px "Baloo 2", sans-serif';
+      var w = Math.ceil(ctx.measureText(text).width) + 20, h = 30;
+      var tx = Math.max(4, Math.min(450 - w - 4, cx - w / 2)), ty = Math.max(4, cy - h / 2);
+      ctx.fillStyle = 'rgba(24,14,54,.93)';
+      rr(tx, ty, w, h, 10); ctx.fill();
+      ctx.strokeStyle = '#ffb03a'; ctx.lineWidth = 2; rr(tx, ty, w, h, 10); ctx.stroke();
+      // pointer down toward the anchor
+      var px = Math.max(tx + 10, Math.min(tx + w - 10, cx));
+      ctx.fillStyle = '#ffb03a';
+      ctx.beginPath();
+      ctx.moveTo(px - 8, ty + h - 1); ctx.lineTo(px + 8, ty + h - 1); ctx.lineTo(px, ty + h + 9); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffe9a8';
+      ctx.fillText(text, tx + w / 2, ty + h / 2 + 1);
+    }
+    function drawPickHints(t) {
+      if (!pickCueActive()) return;
+      var bob = Math.sin(t * 3) * 3;
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (state.graveHintActive) {
+        var site = null;
+        for (var i = 0; i < SITES.length; i++) if (SITES[i].phase === 'empty') { site = SITES[i]; break; }
+        if (site) drawHintBubble(site.x, site.y - 64 + bob, '点一个墓碑，选个怪物放上去！');
+      }
+      if (state.towerHintActive) {
+        var tw = null;
+        for (var j = 0; j < state.towers.length; j++) if (state.towers[j].level < 3) { tw = state.towers[j]; break; }
+        if (tw) { var bc = badgeCenter(tw); drawHintBubble(bc.x, bc.y - 34 + bob, '点怪物，直接升级！'); }
+      }
       ctx.restore();
     }
 
@@ -6481,6 +6538,8 @@
       // placement bubble: a monster is picked from the unlock popup and
       // waiting — point the player at the gravestones
       if (started && playing && state.phase === 'playing' && state.pendingKind) drawTutorial(t);
+      // first-time pick hints (once per run each) — gated inside
+      drawPickHints(t);
       // projectiles
       state.projs.forEach(drawProj);
       // kids sorted by y
@@ -6913,7 +6972,7 @@
         // "place here" mode: the card builds on the shaking grave
         // that was tapped — at once, no second tap. If that grave
         // filled meanwhile (it can't — the game is frozen while
-        // choosing), fall back to the normal pick flow.
+        // choosing), just close and keep the pick.
         if (state.pickMode === 'place') {
           var site = state.placeSite;
           if (site && site.phase === 'empty') {
@@ -6927,25 +6986,26 @@
             choiceEl.setAttribute('aria-hidden', 'true');
             if (soundOn) { ensureAudio(); popSound(); }
             state.picks = Math.max(0, state.picks - 1);
-            state.pendingPick = false;
-            updatePickBtn();
+            // placing on the grave dismisses its hint bubble
+            state.graveHintActive = false;
             syncHUD(true);
             return;
           }
           state.placeSite = null;
-          state.pickMode = 'pick';
+          state.pickMode = null;
+          state.choosing = false;
+          choiceEl.classList.remove('show');
+          choiceEl.setAttribute('aria-hidden', 'true');
+          syncHUD(true);
+          return;
         }
+        // free first tower: the picked card waits for a gravestone
+        // tap (see tapSite) — nothing is spent, the tower is free
         state.pendingKind = c.kind;
-        // in pick mode the pick is now in flight: it is spent only
-        // when the player taps a tower to upgrade it, or a
-        // gravestone to place a new one of this kind (see the
-        // canvas tap handler); closing or cancelling keeps it
-        state.pendingPick = (state.pickMode === 'pick');
         state.choosing = false;
         choiceEl.classList.remove('show');
         choiceEl.setAttribute('aria-hidden', 'true');
         if (soundOn) { ensureAudio(); popSound(); }
-        updatePickBtn();
         syncHUD(true);
       });
       cardEls[c.kind] = d;
@@ -6976,12 +7036,14 @@
       levelUpSound();
       addFloat(tw.x, tw.y - 78, 'Lv ' + tw.level + '!', '#ffd23e', 19);
       // one pick = one action: the pick is spent now that the
-      // upgrade has landed
+      // upgrade has landed — and both first-time hint bubbles
+      // go away with it (the tower bubble's job is done, and
+      // the grave bubble goes once a pick is spent)
       state.picks = Math.max(0, state.picks - 1);
-      state.pendingPick = false;
+      state.graveHintActive = false;
+      state.towerHintActive = false;
       state.pendingKind = null;
       state.pickMode = null;
-      updatePickBtn();
       syncHUD(true);
     }
     /* ---------------- controls & loop ---------------- */
@@ -7035,50 +7097,17 @@
     }
     document.getElementById('btnModeChallenge').addEventListener('click', function () { chooseMode('challenge'); });
     document.getElementById('btnModeEndless').addEventListener('click', function () { chooseMode('endless'); });
-    /* the gold PICK! button in the top bar: hidden until a pick is
-       banked. Tapping it opens the monster picker (game frozen)
-       and the pick is spent only when a placement or an upgrade
-       actually lands. While a picked card is waiting for a field
-       tap, the same button turns into Cancel Pick — it drops the
-       card, reopens the picker, and the banked pick stays put. */
-    var btnPick = document.getElementById('btnPick');
-    var pickBtnTxt = '';
-    function updatePickBtn() {
-      if (!btnPick) return;
-      var show = started && playing && state.phase === 'playing' && !state.choosing && (state.picks > 0 || state.pendingPick);
-      btnPick.hidden = !show;
-      var t = state.pendingPick ? 'Cancel Pick' : (state.picks > 1 ? 'PICK! ×' + state.picks : 'PICK!');
-      if (t !== pickBtnTxt) { pickBtnTxt = t; btnPick.textContent = t; }
-    }
-    btnPick.addEventListener('click', function () {
-      ensureAudio();
-      if (!started || !playing || state.phase !== 'playing') return;
-      if (state.pendingPick) {
-        // change of mind: drop the picked card, reopen the picker,
-        // keep the banked pick for another kind
-        state.pendingKind = null;
-        state.pendingPick = false;
-        openChoice('pick');
-        updatePickBtn();
-        return;
-      }
-      if (state.picks > 0 && !state.choosing && !state.pendingKind) {
-        openChoice('pick');
-        updatePickBtn();
-      }
-    });
-    /* the picker close button ("Later"): only offered on a pick
-       or a "place here" pick, never on the free first tower —
+    /* the picker close button ("Later"): only offered on a
+       "place here" pick, never on the free first tower —
        closing keeps the banked pick for later, it is never spent
        without an action. */
     document.getElementById('btnChoiceClose').addEventListener('click', function () {
-      if (state.pickMode !== 'pick' && state.pickMode !== 'place') return;
+      if (state.pickMode !== 'place') return;
       state.placeSite = null;
       state.choosing = false;
       state.pickMode = null;
       var ch = document.getElementById('towerChoice');
       if (ch) { ch.classList.remove('show'); ch.setAttribute('aria-hidden', 'true'); }
-      updatePickBtn();
       syncHUD(true);
     });
     var bs = document.getElementById('btnStart');
@@ -7219,29 +7248,6 @@
         popSound();
         return;
       }
-      // a pick is in flight (a card was picked from the monster
-      // picker): tapping one of the picked kind on the field levels
-      // it up; tapping anywhere else places a new one of that kind
-      // on the closest empty gravestone (see tapSite). A tower of
-      // another kind just explains the choice — the pick is not spent.
-      if (state.pendingKind && state.pickMode === 'pick') {
-        var pickTw = null, pickD = 40;
-        state.towers.forEach(function (tw) {
-          var d = Math.hypot(tw.x - x, (tw.y - 12) - y);
-          if (d < pickD) { pickD = d; pickTw = tw; }
-        });
-        if (pickTw) {
-          if (pickTw.kind === state.pendingKind) {
-            if (pickTw.level >= 3) addFloat(pickTw.x, pickTw.y - 62, 'Lv 3 MAX \u2605\u2605\u2605', '#ffd23e', 14);
-            else doUpgrade(pickTw);
-          } else {
-            addFloat(pickTw.x, pickTw.y - 62, 'Tap a ' + TOWER_DEFS[state.pendingKind].nm.replace(/ Tower$/, '') + ' to upgrade it — or a gravestone to place another!', '#ffe9a8', 12.5);
-          }
-          return;
-        }
-        tapSite(x, y);
-        return;
-      }
       // a banked pick makes the badge (and the tower under it) a
       // one-tap upgrade: the badge is checked first, because it
       // floats above the tower's body and the body radius below
@@ -7284,10 +7290,9 @@
         if (d < bd) { bd = d; best = s; }
       });
       if (!best) {
-        // nowhere left to build: a pick in flight stays banked —
-        // the player cancels it from the PICK! button up top and
-        // chooses another kind, or closes the picker
-        if (state.pendingPick) addFloat(x, y - 30, 'No empty gravestones — tap PICK! up top to choose again', '#ff9a8a', 12.5);
+        // nowhere left to build: a picked card just waits — the
+        // player taps a tower to upgrade instead
+        if (state.pendingKind) addFloat(x, y - 30, 'No empty gravestones!', '#ff9a8a', 12.5);
         return;
       }
       if (!state.pendingKind) {
@@ -7299,6 +7304,9 @@
         if (bd <= 60) {
           if (state.picks > 0 && !state.choosing) {
             state.placeSite = best;
+            // tapping the grave to open the picker dismisses the
+            // shaking-grave hint bubble for the rest of the run
+            state.graveHintActive = false;
             openChoice('place');
           } else if (state.picks <= 0) {
             var rem = PICK_EVERY - state.prog;
@@ -7314,13 +7322,9 @@
       state.pendingKind = null;
       best.phase = 'falling';
       best.anim = 0;
-      // a placement spends a pick exactly like an upgrade does;
-      // the free first tower (pickMode 'free') spends nothing
-      if (state.pendingPick) {
-        state.picks = Math.max(0, state.picks - 1);
-        state.pendingPick = false;
-        updatePickBtn();
-      }
+      // placement here is the free first tower (pickMode 'free'),
+      // which spends nothing — a pick spent on placement is taken
+      // in the "place here" card click, never here
       state.pickMode = null;
       syncHUD(true);
     }
@@ -7571,7 +7575,6 @@
       updateBombBtn();
       updateScreamBtn();
       updateRainBtn();
-      updatePickBtn();
     }
     requestAnimationFrame(loop);
 
