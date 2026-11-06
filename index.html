@@ -605,14 +605,43 @@
       }
       .choice-close { margin-top: 10px; }
       /* ---------- mode choice popup (after START, before the first
-         tower picker): two big stacked buttons, same floating
-         style as the tower choice ---------- */
-      .mode-grid { display: flex; flex-direction: column; gap: 10px; }
-      .mode-btn {
-        display: flex; flex-direction: column; align-items: center; gap: 3px;
-        font-size: 21px; font-weight: 900; padding: 14px 12px; line-height: 1.2;
+         tower picker): the supplied poster art
+         (assets/mode-select.webp) IS the whole screen. The two mode
+         buttons are drawn in the art, so two transparent hotspots sit
+         over them, positioned by percentage of the poster box so they
+         scale with it. The poster keeps its own 940:1673 ratio and
+         fills the stage height (the stage is always wider than the
+         poster, so the wrapper is exactly the displayed image box and
+         the hotspot %s are image %s); the stage's dark purple shows
+         through the side pillars. ---------- */
+      .modechoice {
+        left: 0; top: 0;
+        width: 100%; max-width: none; height: 100%;
+        transform: none;
+        display: flex; align-items: center; justify-content: center;
       }
-      .mode-btn span { font-size: 13px; font-weight: 600; opacity: .85; }
+      .modechoice.show { transform: none; }
+      .mode-poster {
+        position: relative;
+        height: 100%;
+        aspect-ratio: 940 / 1673;
+        max-width: 100%;
+      }
+      .mode-poster img {
+        display: block; width: 100%; height: 100%; object-fit: contain;
+      }
+      .mode-hot {
+        position: absolute;
+        background: transparent; border: 0; padding: 0; margin: 0;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .mode-hot:focus-visible { outline: 3px solid #ffd23e; outline-offset: 2px; }
+      /* hotspot rects, % of the 940x1673 poster: the two drawn buttons
+         meet at the bat divider near y 63%; the split is at 63.2% so a
+         tap on the divider goes to endless, with no gap or overlap */
+      .mode-hot-challenge { left: 8.9%; top: 50.1%; width: 81.5%; height: 12.7%; }
+      .mode-hot-endless { left: 9.0%; top: 63.2%; width: 81.4%; height: 12.6%; }
       /* ---------- tower upgrade panel (tap a tower wearing LV UP!) ---------- */
       .upanel {
         position: absolute;
@@ -1562,13 +1591,6 @@
       window.__tdLoadGameFont = function () {
         if (window.__tdFontLoading) return;
         window.__tdFontLoading = true;
-        /* STANDALONE BUILD: Baloo 2 is self-hosted under assets/fonts/
-           (the exact files Google Fonts serves, SIL OFL 1.1), so the
-           game never has to reach fonts.googleapis.com /
-           fonts.gstatic.com — unreachable from mainland China. The
-           loader contract is unchanged: css.onload still adds
-           .fonts-in, and window.__tdFontCss is still exposed for the
-           boot-progress wiring below. */
         var css = document.createElement('link');
         css.rel = 'stylesheet';
         css.href = 'assets/fonts/baloo2.css';
@@ -2036,10 +2058,10 @@
           <button class="btn choice-close" id="btnChoiceClose" type="button" style="display:none">Later</button>
         </div>
         <div class="choice modechoice" id="modeChoice" aria-hidden="true">
-          <div class="choice-t">Choose Your Mode</div>
-          <div class="mode-grid">
-            <button class="btn primary mode-btn" id="btnModeChallenge" type="button">闯关模式<span>10 waves — hold the castle, then victory!</span></button>
-            <button class="btn primary mode-btn" id="btnModeEndless" type="button">无限流模式<span>Endless waves — how long can you last?</span></button>
+          <div class="mode-poster">
+            <img src="assets/mode-select.webp" width="940" height="1673" decoding="async" alt="Trick or Defend! Choose your mode" />
+            <button class="mode-hot mode-hot-challenge" id="btnModeChallenge" type="button" aria-label="闯关模式：10 waves, hold the castle, then victory"></button>
+            <button class="mode-hot mode-hot-endless" id="btnModeEndless" type="button" aria-label="无限流模式：endless waves, how long can you last"></button>
           </div>
         </div>
         <div class="battlereport" id="battleReport" aria-hidden="true" role="dialog" aria-label="Defeat report">
