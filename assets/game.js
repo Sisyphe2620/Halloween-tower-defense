@@ -7074,6 +7074,10 @@
       // Restart replays the same mode, so this gate never fires
       // mid-session — modeChosen is set once and stays set.
       if (!modeChosen) { showModeChoice(); return; }
+      // the game is genuinely starting now: reveal the stage, which
+      // stays hidden until this point so no load transition (loading
+      // fade, tap-page fade, poster fade) can ever flash the board
+      document.body.classList.add('in-game');
       // entering the game is the moment the display font gets fetched
       // (it is kept off the start page's load path entirely)
       if (window.__tdLoadGameFont) window.__tdLoadGameFont();
@@ -7102,12 +7106,18 @@
        Plaque fractions are the re-measured values for the current
        render (gold x .090–.900, y .510–.645; purple x .090–.905,
        y .635–.765; the zones meet at the .640 split). The bubble
-       sits at image fractions left .03, top .205, width .58 —
-       just below the painted title (ends ~.19) and above the gold
-       plaque (starts .51), its tail (at ~77% of its width)
-       pointing down-right at Dracula's head. Its left edge is
-       clamped into the container on tall screens, where the
-       image's own left edge is cropped off-screen. */
+       sits at image fractions left .02, top .205, width .35 —
+       measured on the art itself (title ends ~.197; Dracula's head
+       x .378–.598, y .233–.336, face x .395–.600, y .265–.335;
+       Frankenstein's head starts y .320): the old .58-wide bubble
+       at top .205 covered Dracula's face. The narrow bubble stays
+       left of his head and above Frankenstein's, clear of the
+       title and the gold plaque (starts .51); its tail (tip at
+       ~92.5% of its width) points down at him from just left of
+       his hair. On tall screens the poster's sides are cropped, so
+       the bubble's right edge is ALSO capped at image x .37 (the
+       bubble shrinks, and its font with it) — the plain left-edge
+       clamp alone would shove it right over his face. */
     var MODE_POSTER_W = 940, MODE_POSTER_H = 1673;
     function layoutModeOverlay() {
       var poster = document.querySelector('.mode-poster');
@@ -7131,9 +7141,20 @@
       place(document.getElementById('btnModeEndless'), 0.090, 0.640, 0.905, 0.765);
       var bub = poster.querySelector('.dracula-bubble');
       if (bub) {
-        var bw = Math.min(0.58 * dw, 290);
-        var bl = Math.max(8, ox + 0.03 * dw);
-        if (bl + bw > cw - 8) bw = Math.max(120, cw - 8 - bl);
+        var bw = Math.min(0.35 * dw, 290);
+        var bl = Math.max(8, ox + 0.02 * dw);
+        // never let the bubble cross into Dracula's head (his hair
+        // starts at image x .378): cap its right edge at .37,
+        // shrinking it first — on tall screens the poster's sides
+        // are cropped, so the plain left clamp would shove the
+        // bubble right over his face
+        var maxRight = ox + 0.37 * dw;
+        if (bl + bw > maxRight) bw = Math.max(110, maxRight - bl);
+        if (bl + bw > cw - 8) bw = Math.max(110, cw - 8 - bl);
+        // a bubble shrunk to fit a side-cropped screen gets a
+        // smaller font, so it stays short enough to clear
+        // Frankenstein's head (top y .320) below it
+        bub.style.fontSize = bw < 130 ? '10px' : (bw < 150 ? '11px' : '');
         bub.style.left = bl + 'px';
         bub.style.top = (oy + 0.205 * dh) + 'px';
         bub.style.width = bw + 'px';
