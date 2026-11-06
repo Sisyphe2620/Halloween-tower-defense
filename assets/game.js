@@ -1072,14 +1072,32 @@
        PICK_EVERY points the player banks one PICK (see checkUnlock),
        spent in the monster picker: place a new tower of the picked
        kind, or tap one already on the field to level it up. Each
-       level multiplies damage (x1.6 a level), bullet size (x1.4)
+       level multiplies damage (x1.8 a level), bullet size (x1.4)
        and body size, trims the fire interval by 15% and stretches
        range by 10%; each monster's special grows too (chain
        targets, mist radius, whirlwind size, crit chance...) —
        those per-kind numbers live where the tower fires and where
-       its candy lands, below. */
+       its candy lands, below.
+       Late upgrades are worth more: every upgrade ALSO multiplies
+       the tower's own damage by (1 + 0.04 x the current wave), so
+       a tower levelled at wave 25 gains twice the attack of one
+       levelled at wave 5 (see doUpgrade + twWaveBonus) — maxing
+       everything early no longer ends the game, and the wave
+       bonus stacks with the SUPER fusion multiplier below. */
     var PICK_EVERY = 15;              // points (kids chased away) per banked pick
-    var LVL_DMG = [1, 1.6, 2.56];
+    var LVL_DMG = [1, 1.8, 3.24];
+    var WAVE_UPGRADE_BONUS = 0.04;    // per-wave bonus on each upgrade (see doUpgrade)
+    // SUPER fusion: two identical Lv3 towers fuse into one SUPER
+    // tower (see doFuse). A SUPER tower hits 1.5x as hard, fires
+    // 15% faster, reaches 10% further, and every number of its
+    // Lv3 ultimate is x1.5 (counts rounded up, cooldowns /1.5).
+    var SUPER_DMG = 1.5, SUPER_RATE = 0.85, SUPER_RANGE = 1.1;
+    // per-tower wave bonus: tw.waveBonus starts at 1 and is
+    // multiplied at every upgrade by (1 + 0.04 x wave)
+    function twWaveBonus(tw) { return (tw && tw.waveBonus) || 1; }
+    function superMult(tw) { return (tw && tw.super) ? SUPER_DMG : 1; }
+    function superCd(tw, base) { return (tw && tw.super) ? base / SUPER_DMG : base; }
+    function superCount(tw, base) { return (tw && tw.super) ? Math.ceil(base * SUPER_DMG) : base; }
     var LVL_PROJ = [1, 1.4, 1.96];
     var LVL_SCALE = [0.82, 1, 1.18];
     /* build sites: gravestones along the road — empty until the player
@@ -1341,14 +1359,14 @@
     ];
     /* a kid's defence (share of every hit shrugged off): the
        kind's own base — 2 points a tier up the roster, robot 24% —
-       PLUS a wave bonus of +0.7 points for every wave past wave 1.
+       PLUS a wave bonus of +0.8 points for every wave past wave 1.
        The wave bonus applies to EVERY kind alike, so an old kind
        marching again in a later wave blocks noticeably more than
        it did at its debut, growing right alongside its boosted HP:
-       a wave-20 bunny shrugs off ~13% of every hit (not the 0% it
-       had in wave 1), and the toughest late-wave kids cap at 34% */
+       a wave-20 bunny shrugs off ~15% of every hit (not the 0% it
+       had in wave 1), and the toughest late-wave kids cap at 42% */
     function kidArmor(tier, wave) {
-      return Math.min(0.34, tier * 0.02 + Math.max(0, (wave || 1) - 1) * 0.007);
+      return Math.min(0.42, tier * 0.02 + Math.max(0, (wave || 1) - 1) * 0.008);
     }
     /* pick a kind for the current wave: anything already unlocked
        can show up, the newer (tougher) kinds a little more often */
@@ -1484,7 +1502,10 @@
 
     /* ---------------- entities ---------------- */
     var kidSeq = 0;
-    function spawnKid() {
+    // atDist: kids released from a destroyed float boss respawn
+    // at the float's position (see damageKid) instead of the road
+    // start — every other caller passes nothing
+    function spawnKid(atDist) {
       kidSeq++;
       var wv = state.wave;
       // which kind walks in: only kinds unlocked by this wave can
@@ -1492,18 +1513,19 @@
       var tier = pickKidTier(wv);
       var def = KID_TYPES[tier];
       // the kind's own base HP, boosted by the wave it marches in:
-      // +5% a wave compounding, so kinds that debuted early still
-      // come back tougher every time they reappear. In challenge
-      // mode the compounding halves to +2.5% a wave from wave 15
-      // on (the wave-14 factor, then 1.025 for each wave past 14),
+      // +5% a wave compounding in challenge mode (+6.5% a wave in
+      // endless), so kinds that debuted early still come back
+      // tougher every time they reappear. In challenge mode the
+      // compounding halves to +2.5% a wave from wave 15 on (the
+      // wave-14 factor, then 1.025 for each wave past 14),
       // because the run ends at wave 10 anyway. In endless mode
-      // the full x1.05^(wave-1) curve keeps compounding past wave
+      // the full x1.065^(wave-1) curve keeps compounding past wave
       // 10 with no cap, so the road never stops getting tougher.
       // From wave 5 on the settled HP is then multiplied by 1.5 on
       // top of that — and from wave 10 on by 1.6 instead — EVERY
       // kind alike, the two speedsters included; waves 1–4 settle
       // exactly as before
-      var hpGrowth = runMode === 'endless' ? Math.pow(1.05, wv - 1) : (wv <= 14 ? Math.pow(1.05, wv - 1) : Math.pow(1.05, 13) * Math.pow(1.025, wv - 14));
+      var hpGrowth = runMode === 'endless' ? Math.pow(1.065, wv - 1) : (wv <= 14 ? Math.pow(1.05, wv - 1) : Math.pow(1.05, 13) * Math.pow(1.025, wv - 14));
       var khp = Math.round(def.hp * hpGrowth) + Math.random() * 6;
       if (wv >= 10) khp *= 1.6;
       else if (wv >= 5) khp *= 1.5;
@@ -1532,7 +1554,7 @@
         // every kind except the two speedsters, whose knocks
         // only take half a point (see their KID_TYPES entries)
         knockDmg: def.knock || 1,
-        dist: -Math.random() * 6,
+        dist: (atDist != null ? atDist : -Math.random() * 6),
         // road walking speed: a small step up every TWO waves —
         // waves 1-2 share the base pace, waves 3-4 are one slight
         // step faster (+0.9, under 2% of the base), waves 5-6 the
@@ -1553,15 +1575,15 @@
         // factor included, so the ninja's 1.5 and the cheetah's
         // 1.68 stack with it rather than being replaced. In
         // endless mode one more multiplier stacks on top:
-        // x1.03 compounding per wave, so wave 20 runs about
-        // 1.75x the wave-1 pace before the step bonus — each wave
+        // x1.035 compounding per wave, so wave 20 runs about
+        // 1.9x the wave-1 pace before the step bonus — each wave
         // is noticeably faster, and eventually overwhelming.
         // This `speed` drives ONLY the march down the road: fleeing
         // back (FLEE_SPEED) and walking to a knocking slot in the
         // plaza (its own fixed pace) are separate and unchanged.
-        speed: (42 + Math.random() * 10 + speedBonus) * (def.spd || (1 - tier * 0.008)) * (wv >= 10 ? 1.3 : 1) * (runMode === 'endless' ? Math.pow(1.03, wv - 1) : 1),
+        speed: (42 + Math.random() * 10 + speedBonus) * (def.spd || (1 - tier * 0.008)) * (wv >= 10 ? 1.3 : 1) * (runMode === 'endless' ? Math.pow(1.035, wv - 1) : 1),
         hp: khp, hpMax: khp,
-        x: PATH[0][0], y: PATH[0][1],
+        x: (atDist != null ? pointAt(Math.max(0, atDist)).x : PATH[0][0]), y: (atDist != null ? pointAt(Math.max(0, atDist)).y : PATH[0][1]),
         mode: 'walk',            // walk | toSlot | knock | happy | cheer
         slot: null,
         overflow: false,         // true only for the extra knocker standing at the plaza's centre when every slot is taken
@@ -1584,6 +1606,74 @@
         rainTime: 0
       });
       state.spawned++;
+    }
+
+    /* -------- parade-float boss: every 10th wave --------
+       On waves 10, 20, 30, ... one boss rolls in FIRST, ahead of
+       the wave's normal kids: a Halloween kid riding a decorated
+       parade float (see drawFloatBoss). It is a kid like any other
+       — same path, same tower effects (hit, slowed, stunned,
+       carried, pinned) — but far tougher: HP 12x a top-tier kid
+       of the wave, armour 0.5, 0.6x road pace, and each knock
+       takes 5 HP off the house. It carries kids inside (wave 10:
+       5, +3 per later boss); while they ride they take no damage,
+       and when the float is destroyed they jump out at its
+       position as normal kids of the wave (see damageKid).
+       Destroying the float itself counts as one kill, like any kid. */
+    var BOSS_HP_MULT = 12, BOSS_ARMOR = 0.5, BOSS_SPEED = 0.6, BOSS_KNOCK = 5;
+    function bossCarried(wv) { return 5 + 3 * (Math.floor(wv / 10) - 1); }
+    function spawnBoss() {
+      var wv = state.wave;
+      // the float's HP mirrors spawnKid's wave scaling (keep in
+      // sync): robot base HP (114, the toughest kind) x the wave
+      // growth x the wave jump, then 12x
+      var hpGrowth = runMode === 'endless' ? Math.pow(1.065, wv - 1) : (wv <= 14 ? Math.pow(1.05, wv - 1) : Math.pow(1.05, 13) * Math.pow(1.025, wv - 14));
+      var khp = Math.round(114 * hpGrowth) + Math.random() * 6;
+      if (wv >= 10) khp *= 1.6;
+      else if (wv >= 5) khp *= 1.5;
+      var bossHP = Math.round(khp * BOSS_HP_MULT);
+      // the float lumbers at 0.6x the wave's road pace (same
+      // stepping + wave-10 x1.3 + endless compounding as a normal
+      // kid, then the float's own slow factor)
+      var speedSteps = Math.floor((wv - 1) / 2);
+      var speedBonus = wv <= 14 ? speedSteps * 0.9 : 6 * 0.9 + (speedSteps - 6) * 0.45;
+      var bSpeed = (42 + Math.random() * 10 + speedBonus) * (1 - 12 * 0.008) * (wv >= 10 ? 1.3 : 1) * (runMode === 'endless' ? Math.pow(1.035, wv - 1) : 1) * BOSS_SPEED;
+      kidSeq++;
+      state.kids.push({
+        id: kidSeq,
+        costume: 'boss',
+        tier: 12,
+        hop: false,
+        armor: BOSS_ARMOR,
+        knockDmg: BOSS_KNOCK,
+        dist: -Math.random() * 6,
+        speed: bSpeed,
+        hp: bossHP, hpMax: bossHP,
+        x: PATH[0][0], y: PATH[0][1],
+        mode: 'walk',
+        slot: null,
+        overflow: false,
+        bob: Math.random() * Math.PI * 2,
+        knockPhase: Math.random(),
+        happyTimer: 0,
+        scale: 1.9,
+        slowTimer: 0,
+        fleeTimer: 0,
+        stunTimer: 0,
+        blockTimer: 0,
+        webTimer: 0,
+        webF: 0.35,
+        armorDownTimer: 0,
+        armorZeroTimer: 0,
+        carryT: 0,
+        pinT: 0,
+        rainTime: 0,
+        boss: true,
+        carried: bossCarried(wv)
+      });
+      state.spawned++;
+      addFloat(225, 140, 'BOSS!', '#ff6a3d', 22);
+      popSound();
     }
 
     /* all 20 waves sent and every kid dealt with while the house still
@@ -2382,6 +2472,20 @@
         if (k.slot) { k.slot.taken = null; k.slot = null; }
         k.overflow = false;
         k.mode = 'happy'; k.happyTimer = 0;
+        // a destroyed float boss is gone at once (no happy
+        // hop-off) and spills its riders: the kids inside jump
+        // out at the float's position and keep walking as normal
+        // kids of this wave — each one counts normally when killed
+        if (k.boss) {
+          k.happyTimer = 2;
+          var relDist = k.dist, relN = k.carried || 0;
+          k.carried = 0;
+          for (var ri = 0; ri < relN; ri++) spawnKid(Math.max(0, relDist - ri * 8));
+          if (relN > 0) {
+            addFloat(k.x, k.y - 64, 'BOSS DOWN!', '#ff6a3d', 18);
+            burstCandy(k.x, k.y - 20, 14, 90, k.y + 4);
+          }
+        }
         state.kills++; noteComboKill();
         state.prog++;
         endlessHeal();
@@ -2396,7 +2500,7 @@
         // bursts, spraying poison damage at the kids around it —
         // and a kid the burst kills bursts in turn, up to the
         // chain cap (plagueDepth is the live recursion guard)
-        if (isPoison && src && src.kind === 'witch' && src.level === 3 && plagueDepth < PLAGUE_CHAIN) {
+        if (isPoison && src && src.kind === 'witch' && src.level === 3 && plagueDepth < (src.super ? superCount(src, PLAGUE_CHAIN) : PLAGUE_CHAIN)) {
           plagueDepth++;
           plagueBurst(k, src);
           plagueDepth--;
@@ -2412,12 +2516,12 @@
     function plagueBurst(deadK, src) {
       var bx = deadK.x, by = deadK.y - 14;
       burstCandy(bx, by, 10, 80, by + 4);
-      state.rings.push({ x: bx, y: by, r: 8, maxR: PLAGUE_R, t: 0, life: 0.4, color: '157,92,255' });
+      state.rings.push({ x: bx, y: by, r: 8, maxR: PLAGUE_R * superMult(src), t: 0, life: 0.4, color: '157,92,255' });
       addFloat(bx, by - 30, 'PLAGUE!', '#b78cff', 14);
       state.kids.forEach(function (o) {
         if (o === deadK || o.mode !== 'walk') return;
-        if (Math.hypot(o.x - bx, (o.y - 12) - by) > PLAGUE_R) return;
-        damageKid(o, PLAGUE_DMG, src, false, true);
+        if (Math.hypot(o.x - bx, (o.y - 12) - by) > PLAGUE_R * superMult(src)) return;
+        damageKid(o, PLAGUE_DMG * twWaveBonus(src) * superMult(src), src, false, true);
       });
     }
     /* franken bolt: the lightning jumps from the kid it hit to the two
@@ -2528,14 +2632,16 @@
        The original six all throw a homing candy (handled in the main
        fire loop); the rotating recruits each break that mould, so
        they get their own firing routine here. The shared maths is
-       identical to the old towers: damage x1.6 a level, interval
-       -15% a level, range +10% a level — and a werewolf howl nearby
-       divides the interval by 1.3 while the buff lasts */
+       identical to the old towers: damage x1.8 a level (x the wave
+       bonus, x SUPER), interval -15% a level (SUPER fires 15%
+       faster still), range +10% a level (+10% more for SUPER) —
+       and a werewolf howl nearby divides the interval by 1.3
+       while the buff lasts */
     function fireRate(tw, lvI) {
-      return tw.rate * Math.pow(0.85, lvI) / (tw.buffT > 0 ? HOWL_BUFF : 1);
+      return tw.rate * Math.pow(0.85, lvI) * (tw.super ? SUPER_RATE : 1) / (tw.buffT > 0 ? HOWL_BUFF : 1);
     }
     function fireSpecial(tw, lvI, range) {
-      var dmg = tw.dmg * LVL_DMG[lvI];
+      var dmg = tw.dmg * LVL_DMG[lvI] * twWaveBonus(tw) * superMult(tw);
       function findKid(nearest) {
         var pick = null, pickV = nearest ? Infinity : -1;
         state.kids.forEach(function (k) {
@@ -2558,7 +2664,7 @@
         if (!allies.length) { tw.cd = 0.8; return; }
         tw.cd = fireRate(tw, lvI);
         tw.throwT = THROW_DUR;
-        allies.forEach(function (o) { o.buffT = Math.max(o.buffT || 0, HOWL_DUR[lvI]); });
+        allies.forEach(function (o) { o.buffT = Math.max(o.buffT || 0, HOWL_DUR[lvI] * superMult(tw)); });
         state.rings.push({ x: tw.x, y: tw.y - 12, r: 10, maxR: range, t: 0, life: 0.55, color: '255,190,90' });
         addFloat(tw.x, tw.y - 76, 'AWOOO!', '#ffd9a0', 15);
         popSound();
@@ -2576,10 +2682,11 @@
         tw.throwT = THROW_DUR;
         if (tw.level === 3) {
           // Lv3 sonic storm: THREE rings roll out one after
-          // another, each one hurting and stunning every kid its
-          // edge passes (the damage ticks in the rings loop)
-          for (var sri = 0; sri < 3; sri++) {
-            state.rings.push({ x: tw.x, y: tw.y - 14, r: 8, maxR: range, t: 0, life: 0.45, color: '120,220,255', delay: sri * 0.22, dmg: dmg, src: tw, hit: {}, stun: 1 });
+          // another (FIVE for a SUPER bat), each one hurting and
+          // stunning every kid its edge passes (the damage ticks
+          // in the rings loop)
+          for (var sri = 0; sri < superCount(tw, 3); sri++) {
+            state.rings.push({ x: tw.x, y: tw.y - 14, r: 8, maxR: range, t: 0, life: 0.45, color: '120,220,255', delay: sri * 0.22, dmg: dmg, src: tw, hit: {}, stun: tw.super ? 1.5 : 1 });
           }
           addFloat(tw.x, tw.y - 66, 'SONIC STORM!', '#aee6ff', 13);
         } else {
@@ -2607,14 +2714,14 @@
           // (the snare and drag tick in the update/kid loops).
           // The giant net only comes out once every NET_CD seconds;
           // between giants the spider throws its small webs as usual
-          state.netZones.push({ x: tgt.x, y: tgt.y - 2, r: NET_R, t: 0, dur: NET_DUR, slowF: NET_SLOW, src: tw, seed: Math.random() });
+          state.netZones.push({ x: tgt.x, y: tgt.y - 2, r: NET_R * superMult(tw), t: 0, dur: NET_DUR * superMult(tw), slowF: tw.super ? 0.20 : NET_SLOW, src: tw, seed: Math.random() });
           addFloat(tgt.x, tgt.y - 40, 'NET!', '#cfe8ff', 13);
-          tw.netCd = NET_CD;
+          tw.netCd = superCd(tw, NET_CD);
         } else {
           state.projs.push({
             x: tw.x, y: tw.y - 26, tx: tgt, kind: 'web', color: '#e8e4f5',
             speed: 300, dmg: dmg, t: 0, src: tw, psize: LVL_PROJ[lvI],
-            webT: WEB_TIME[lvI], webF: WEB_SLOW[lvI], webR: WEB_SPLASH[lvI]
+            webT: WEB_TIME[lvI] * superMult(tw), webF: tw.super ? 0.20 : WEB_SLOW[lvI], webR: WEB_SPLASH[lvI] * superMult(tw)
           });
         }
       } else if (tw.proj === 'goo') {
@@ -2623,10 +2730,10 @@
         state.projs.push({
           x: tw.x, y: tw.y - 26, tx: tgt, kind: 'goo', color: '#7ee06f',
           speed: 250, dmg: dmg, t: 0, src: tw, psize: LVL_PROJ[lvI],
-          meltT: MELT_DUR[lvI],
-          puddleR: tw.level === 3 ? ACID_R : SLIME_PUDDLE_R[lvI],
-          puddleDps: tw.level === 3 ? ACID_DPS : SLIME_PUDDLE_DPS * [1, 1.4, 1.9][lvI],
-          puddleSlow: tw.level === 3 ? ACID_SLOW : SLIME_PUDDLE_SLOW[lvI],
+          meltT: MELT_DUR[lvI] * superMult(tw),
+          puddleR: tw.level === 3 ? ACID_R * superMult(tw) : SLIME_PUDDLE_R[lvI],
+          puddleDps: (tw.level === 3 ? ACID_DPS : SLIME_PUDDLE_DPS * [1, 1.4, 1.9][lvI]) * twWaveBonus(tw) * superMult(tw),
+          puddleSlow: tw.level === 3 ? (tw.super ? 0.30 : ACID_SLOW) : SLIME_PUDDLE_SLOW[lvI],
           puddleDur: SLIME_PUDDLE_DUR, acid: tw.level === 3
         });
       } else if (tw.proj === 'crow') {
@@ -2640,8 +2747,8 @@
             if (d < range) crowTargets.push(k);
           });
           crowTargets.sort(function (a, b) { return b.dist - a.dist; });
-          crowTargets.slice(0, 5).forEach(function (ck, ci) {
-            state.crows.push({ tx: ck, src: tw, dps: dmg * 0.55, t: 0, dur: CROW_DUR[lvI], x: tw.x + (ci - 2) * 8, y: tw.y - 36 - (ci % 2) * 6, peck: 0 });
+          crowTargets.slice(0, superCount(tw, 5)).forEach(function (ck, ci) {
+            state.crows.push({ tx: ck, src: tw, dps: dmg * 0.55, t: 0, dur: CROW_DUR[lvI] * superMult(tw), x: tw.x + (ci - (tw.super ? 3.5 : 2)) * 8, y: tw.y - 36 - (ci % 2) * 6, peck: 0 });
           });
           addFloat(tw.x, tw.y - 66, 'MURDER OF CROWS!', '#d9c8ff', 13);
         } else {
@@ -2657,13 +2764,15 @@
         var armTargets = [tgt];
         if (tw.level === 3) {
           // Lv3: BOTH arms fly at once, at the two furthest kids
-          var armAlt = null, armAltD = -1;
+          // (a SUPER zombie throws a THIRD arm at the next one)
+          var armAlts = [];
           state.kids.forEach(function (k) {
             if (k.mode !== 'walk' || k === tgt) return;
             var d = Math.hypot(k.x - tw.x, k.y - tw.y);
-            if (d < range && k.dist > armAltD) { armAlt = k; armAltD = k.dist; }
+            if (d < range) armAlts.push(k);
           });
-          if (armAlt) armTargets.push(armAlt);
+          armAlts.sort(function (a, b) { return b.dist - a.dist; });
+          armAlts.slice(0, tw.super ? 2 : 1).forEach(function (ak) { armTargets.push(ak); });
         }
         armTargets.forEach(function (at) {
           var mx = tw.x, my = tw.y - 26;
@@ -2672,7 +2781,7 @@
           tw.armsOut = (tw.armsOut || 0) + 1;
           state.projs.push({
             kind: 'arm', x: mx, y: my, vx: Math.cos(ang), vy: Math.sin(ang), ang: ang,
-            speed: 330, dmg: dmg, t: 0, traveled: 0, maxTravel: ARM_LEN * (1 + 0.1 * lvI),
+            speed: 330, dmg: dmg, t: 0, traveled: 0, maxTravel: ARM_LEN * (1 + 0.1 * lvI) * superMult(tw),
             phase: 'out', hitOut: {}, hitBack: {}, src: tw, psize: LVL_PROJ[lvI]
           });
         });
@@ -2682,8 +2791,10 @@
 
     /* ---------------- update ---------------- */
     var SPEED = 1, playing = false;
-    /* per-game tower rotation: the choice panel always offers six
-       cards, but WHICH six rotates every game. Game 1 fields the
+    /* per-game tower rotation: in campaign mode the choice panel
+       offers six cards, but WHICH six rotates every game (endless
+       mode offers all twelve instead — see refreshCards).
+       Game 1 fields the
        original six (with the Spider holding the Black Cat's old
        seat); game 2 swaps Ghost/Mummy/Skeleton for
        Black Cat/Bat/Scarecrow; game 3 brings the original bench
@@ -2823,6 +2934,7 @@
        card builds on that grave at once, no second tap, and the
        player may close it with Later and keep the pick. */
     function openChoice(mode) {
+      refreshCards(); // the card set follows the mode: all twelve in endless, the six of this game in campaign
       state.pickMode = mode;
       state.choosing = true;
       state.bombArmed = false;
@@ -2882,7 +2994,7 @@
           if (site.anim >= RISE_DUR) {
             site.phase = 'built'; site.anim = 0;
             var def = TOWER_DEFS[site.kind];
-            var tw = { x: site.x, y: site.y, kind: site.kind, range: def.range, rate: def.rate, dmg: def.dmg, proj: def.proj, cd: 0.35, throwT: 0, level: 1, kills: 0, growT: -1, growFrom: LVL_SCALE[0], flashT: 0, buffT: 0, armGone: false, armsOut: 0, leap: null, leapCd: 1.6, pounce: null, pounceCd: 3, netCd: 0 };
+            var tw = { x: site.x, y: site.y, kind: site.kind, range: def.range, rate: def.rate, dmg: def.dmg, proj: def.proj, cd: 0.35, throwT: 0, level: 1, kills: 0, growT: -1, growFrom: LVL_SCALE[0], flashT: 0, buffT: 0, armGone: false, armsOut: 0, leap: null, leapCd: 1.6, pounce: null, pounceCd: 3, netCd: 0, waveBonus: 1, super: false };
             site.tower = tw;
             state.towers.push(tw);
             popSound();
@@ -2994,6 +3106,10 @@
             state.waveState = 'spawning';
             state.waveAnnounced = false;
             state.spawnTimer = 0.3;
+            // every 10th wave a parade-float boss rolls in first,
+            // ahead of the wave's normal kids (campaign wave 10
+            // gets it as the finale)
+            if (state.wave % 10 === 0) spawnBoss();
             syncHUD(true);
           }
         }
@@ -3130,10 +3246,12 @@
           // mid-pin: its ball clock simply waits until it bounds home
           if (tw.pounce) return;
           // this tower's level scales everything it throws: damage
-          // x1.6 a level, range +10% a level, interval -15% a level,
-          // bullets x1.4 a level — plus its own special growth below
+          // x1.8 a level (x the wave bonus, x SUPER), range +10% a
+          // level (+10% more for SUPER), interval -15% a level
+          // (SUPER fires 15% faster still), bullets x1.4 a level —
+          // plus its own special growth below
           var lvI = tw.level - 1;
-          var range = tw.range * (1 + 0.1 * lvI);
+          var range = tw.range * (1 + 0.1 * lvI) * (tw.super ? SUPER_RANGE : 1);
           // the six rotating towers fire their own way entirely
           if (tw.proj === 'web' || tw.proj === 'sonic' || tw.proj === 'crow' ||
               tw.proj === 'arm' || tw.proj === 'howl' || tw.proj === 'goo') {
@@ -3153,7 +3271,7 @@
             });
             if (pk) {
               tw.pounce = { k: pk, phase: 'out', t: 0, x: tw.x, y: tw.y - 26, sx: tw.x, sy: tw.y - 26, tx: pk.x, ty: pk.y - 14 };
-              tw.pounceCd = POUNCE_CD;
+              tw.pounceCd = superCd(tw, POUNCE_CD);
               addFloat(tw.x, tw.y - 66, 'POUNCE!', '#ffb03a', 13);
               popSound();
             } else tw.pounceCd = 0.5;
@@ -3167,28 +3285,27 @@
           if (best) {
             tw.cd = fireRate(tw, lvI); // level trims the interval; a werewolf howl nearby trims it further
             tw.throwT = THROW_DUR; // monster plays its candy-throw motion
-            var dmg = tw.dmg * LVL_DMG[lvI];
+            var dmg = tw.dmg * LVL_DMG[lvI] * twWaveBonus(tw) * superMult(tw);
             if (tw.proj === 'vortex') {
               // mummy: a swirling sand vortex chases the furthest kid
               // in range — at Lv3 a second one blows out at another kid
-              var vTargets = [best];
-              if (tw.level === 3) {
-                var vAlt = null, vAltD = -1;
-                state.kids.forEach(function (k) {
-                  if (k.mode !== 'walk' || k === best) return;
-                  var vd = Math.hypot(k.x - tw.x, k.y - tw.y);
-                  if (vd < range && k.dist > vAltD) { vAlt = k; vAltD = k.dist; }
-                });
-                if (vAlt) vTargets.push(vAlt);
-              }
+              // (a SUPER mummy blows out a third)
+              var vCands = [];
+              state.kids.forEach(function (k) {
+                if (k.mode !== 'walk') return;
+                var vd = Math.hypot(k.x - tw.x, k.y - tw.y);
+                if (vd < range) vCands.push(k);
+              });
+              vCands.sort(function (a, b) { return b.dist - a.dist; });
+              var vTargets = vCands.slice(0, tw.super ? 3 : (tw.level === 3 ? 2 : 1));
               // Lv3 sandstorm: a much bigger whirlwind that also
               // blows kids back down the road (see the kid loop)
               var isStorm = tw.level === 3;
               vTargets.forEach(function (vt) {
                 state.vortexes.push({
-                  x: tw.x, y: tw.y - 26, tx: vt, r: isStorm ? STORM_R : VORT_R[lvI],
-                  dps: VORT_DPS[lvI], slowF: VORT_SLOW, t: 0,
-                  life: VORT_LIFE[lvI], src: tw, seed: Math.random(), storm: isStorm
+                  x: tw.x, y: tw.y - 26, tx: vt, r: isStorm ? STORM_R * superMult(tw) : VORT_R[lvI],
+                  dps: VORT_DPS[lvI] * twWaveBonus(tw) * superMult(tw), slowF: VORT_SLOW, t: 0,
+                  life: VORT_LIFE[lvI] * superMult(tw), src: tw, seed: Math.random(), storm: isStorm
                 });
               });
               // Lv3 sandstorm balance (2026-11-06): at Lv3 every
@@ -3210,13 +3327,13 @@
               // Lv3 bone wall: THREE piles in a row along the road
               // (40px apart, back from the furthest kid) — the
               // triple counts as one throw, at most six piles live
-              var pileN = (tw.level === 3) ? Math.min(3, 6 - livePiles) : (livePiles < 2 ? 1 : 0);
+              var pileN = (tw.level === 3) ? Math.min(tw.super ? 5 : 3, (tw.super ? 9 : 6) - livePiles) : (livePiles < 2 ? 1 : 0);
               for (var pqi = 0; pqi < pileN; pqi++) {
                 var pdist = Math.max(0, best.dist - pqi * 40);
                 var ppt = pointAt(pdist);
                 state.bonePiles.push({
                   x: ppt.x, y: ppt.y, dist: pdist,
-                  bones: PILE_BONES[lvI], maxBones: PILE_BONES[lvI],
+                  bones: Math.round(PILE_BONES[lvI] * superMult(tw)), maxBones: Math.round(PILE_BONES[lvI] * superMult(tw)),
                   t: 0, dur: PILE_DUR, src: tw, seed: Math.random()
                 });
               }
@@ -3231,9 +3348,9 @@
               // ghost often throws TWO of them at once, fanned apart
               var mx2 = tw.x, my2 = tw.y - 26;
               var baseAng = Math.atan2((best.y - 14) - my2, best.x - mx2);
-              var shots = (tw.level === 3 && Math.random() < 0.55) ? 2 : 1;
+              var shots = tw.super ? 3 : (tw.level === 3 && Math.random() < 0.55) ? 2 : 1;
               for (var sh = 0; sh < shots; sh++) {
-                var ang = baseAng + (shots === 2 ? (sh === 0 ? -0.13 : 0.13) : 0);
+                var ang = baseAng + (shots === 3 ? (sh - 1) * 0.13 : shots === 2 ? (sh === 0 ? -0.13 : 0.13) : 0);
                 state.projs.push({
                   x: mx2, y: my2, kind: 'lolli', pierce: true,
                   vx: Math.cos(ang) * 305, vy: Math.sin(ang) * 305,
@@ -3245,7 +3362,7 @@
               // ghosts fly out and carry three kids back down the
               // road (the carry itself ticks in the update loop)
               if (tw.level === 3 && (tw.miniCd || 0) <= 0) {
-                tw.miniCd = MINI_GHOST_CD;
+                tw.miniCd = superCd(tw, MINI_GHOST_CD);
                 var mgTargets = [];
                 state.kids.forEach(function (k) {
                   if (k.mode !== 'walk') return;
@@ -3253,8 +3370,8 @@
                   if (d < range) mgTargets.push(k);
                 });
                 mgTargets.sort(function (a, b) { return b.dist - a.dist; });
-                mgTargets.slice(0, 3).forEach(function (mk) {
-                  state.miniGhosts.push({ k: mk, t: 0, dur: MINI_GHOST_DUR, src: tw, seed: Math.random() * 6 });
+                mgTargets.slice(0, superCount(tw, 3)).forEach(function (mk) {
+                  state.miniGhosts.push({ k: mk, t: 0, dur: MINI_GHOST_DUR * superMult(tw), src: tw, seed: Math.random() * 6 });
                   addFloat(mk.x, mk.y - 44, 'BOO!', '#f6f2ff', 12);
                 });
               }
@@ -3262,9 +3379,9 @@
               var np = 1;
               // Lv3 franken: THREE bolts at three different kids
               // at once — a real lightning storm
-              if (tw.proj === 'bolt' && tw.level === 3) np = 3;
+              if (tw.proj === 'bolt' && tw.level === 3) np = tw.super ? 5 : 3;
               // Lv3 black cat sometimes bats out a second paw ball
-              else if (tw.proj === 'ball' && tw.level === 3 && Math.random() < 0.35) np = 2;
+              else if (tw.proj === 'ball' && tw.level === 3 && Math.random() < (tw.super ? 0.6 : 0.35)) np = 2;
               var usedTgts = [best];
               for (var pi2 = 0; pi2 < np; pi2++) {
                 var tgt = best;
@@ -3283,8 +3400,8 @@
                   color: CANDY_COLORS[Math.floor(Math.random() * CANDY_COLORS.length)],
                   speed: 265, dmg: dmg, t: 0, src: tw, psize: LVL_PROJ[lvI]
                 };
-                if (tw.proj === 'bolt') { pr.chain = [2, 3, 4][lvI]; pr.stun = (tw.level === 3 ? 2 : [0.7, 0.95, 1.2][lvI]); }
-                if (tw.proj === 'potion') { pr.poisR = [30, 38, 46][lvI]; pr.poisDps = POISON_DPS * [1, 1.35, 1.75][lvI]; pr.slowF = [0.72, 0.64, 0.56][lvI]; }
+                if (tw.proj === 'bolt') { pr.chain = tw.super ? 6 : [2, 3, 4][lvI]; pr.stun = (tw.super ? 3 : tw.level === 3 ? 2 : [0.7, 0.95, 1.2][lvI]); }
+                if (tw.proj === 'potion') { pr.poisR = tw.super ? 69 : [30, 38, 46][lvI]; pr.poisDps = POISON_DPS * [1, 1.35, 1.75][lvI] * twWaveBonus(tw) * superMult(tw); pr.slowF = tw.super ? 0.45 : [0.72, 0.64, 0.56][lvI]; }
                 if (tw.proj === 'ball') { pr.critC = [0.3, 0.4, 0.5][lvI]; }
                 state.projs.push(pr);
               }
@@ -3310,7 +3427,7 @@
           if (fo >= 1) {
             pc.phase = 'pin'; pc.t = 0;
             if (pc.k) {
-              pc.k.pinT = Math.max(pc.k.pinT, POUNCE_PIN);
+              pc.k.pinT = Math.max(pc.k.pinT, POUNCE_PIN * superMult(tw));
               addFloat(pc.k.x, pc.k.y - 48, 'PINNED!', '#ffb03a', 13);
             }
           }
@@ -3318,10 +3435,10 @@
           if (pc.k) {
             pc.x = pc.k.x; pc.y = pc.k.y - 14;
             pc.k.pinT = Math.max(pc.k.pinT, 0.15);
-            damageKid(pc.k, POUNCE_DPS * dt, tw);
+            damageKid(pc.k, POUNCE_DPS * twWaveBonus(tw) * superMult(tw) * dt, tw);
             if (Math.random() < dt * 6) burstCandy(pc.k.x, pc.k.y - 20, 1, 26, pc.k.y + 4);
           }
-          if (pc.t >= POUNCE_PIN) { pc.phase = 'back'; pc.t = 0; }
+          if (pc.t >= POUNCE_PIN * superMult(tw)) { pc.phase = 'back'; pc.t = 0; }
         } else if (pc.phase === 'back') {
           var fb = Math.min(1, pc.t / POUNCE_FLY);
           pc.x = pc.tx + (pc.sx - pc.tx) * fb;
@@ -3393,7 +3510,7 @@
             sx: tw.x, sy: tw.y, tx: pick.x, ty: pick.y,
             x: tw.x, y: tw.y, lift: 0, face: pick.x >= tw.x ? 1 : -1,
             swipes: 3 + (Math.random() < 0.5 ? 1 : 0), swipeT: 0.14, swipeAge: 9,
-            dmg: WOLF_CLAW_DMG * LVL_DMG[lvW]
+            dmg: WOLF_CLAW_DMG * LVL_DMG[lvW] * twWaveBonus(tw) * superMult(tw)
           };
           state.rings.push({ x: tw.x, y: tw.y - 12, r: 8, maxR: 52, t: 0, life: 0.4, color: '255,176,58' });
           addFloat(tw.x, tw.y - 84, 'TRANSFORM!', '#ffb03a', 14);
@@ -3450,7 +3567,7 @@
           lp.face = lp.sx >= lp.tx ? 1 : -1;
           if (fb >= 1) { lp.phase = 'shrink'; lp.t = 0; lp.lift = 0; }
         } else if (lp.phase === 'shrink') {
-          if (lp.t >= 0.3) { tw.leap = null; tw.leapCd = WOLF_LEAP_CD; } // fully back in werewolf form: the 6s rest starts NOW, from this moment
+          if (lp.t >= 0.3) { tw.leap = null; tw.leapCd = superCd(tw, WOLF_LEAP_CD); } // fully back in werewolf form: the 6s rest starts NOW, from this moment
         }
       });
 
@@ -3583,7 +3700,7 @@
           state.miniGhosts.splice(mgi, 1); continue;
         }
         mg.k.carryT = Math.max(mg.k.carryT, 0.12);
-        mg.k.dist = Math.max(0, mg.k.dist - MINI_GHOST_CARRY * dt);
+        mg.k.dist = Math.max(0, mg.k.dist - MINI_GHOST_CARRY * superMult(mg.src) * dt);
       }
 
       // projectiles
@@ -3762,7 +3879,7 @@
               for (var nzi2 = 0; nzi2 < state.netZones.length; nzi2++) {
                 var nz2 = state.netZones[nzi2];
                 if (Math.hypot(k.x - nz2.x, (k.y - 12) - nz2.y) < nz2.r) {
-                  k.dist = Math.max(0, k.dist - NET_DRAG * dt);
+                  k.dist = Math.max(0, k.dist - NET_DRAG * superMult(nz2.src) * dt);
                   break;
                 }
               }
@@ -3772,7 +3889,7 @@
                 var vx3 = state.vortexes[vxi3];
                 if (!vx3.storm) continue;
                 if (Math.hypot(k.x - vx3.x, (k.y - 12) - vx3.y) < vx3.r) {
-                  k.dist = Math.max(0, k.dist - STORM_PUSH * dt);
+                  k.dist = Math.max(0, k.dist - STORM_PUSH * superMult(vx3.src) * dt);
                   break;
                 }
               }
@@ -5616,6 +5733,7 @@
             var gs = 1 - Math.pow(1 - ge, 3);
             mScale = 1.3 * (tw2.growFrom + (LVL_SCALE[lvl - 1] - tw2.growFrom) * gs);
           }
+          if (tw2 && tw2.super) mScale *= 1.12; // SUPER towers stand a touch taller
           // a werewolf mid-pounce is OFF its stone: while it swells
           // into the giant wolf (grow) and shrinks back (shrink) it
           // is still drawn here, hugely scaled; while it is out on
@@ -5638,6 +5756,13 @@
             ag.addColorStop(0, 'rgba(255,205,70,' + (0.30 + 0.08 * Math.sin(t * 3)) + ')');
             ag.addColorStop(1, 'rgba(255,205,70,0)');
             ctx.fillStyle = ag; circle(site.x, site.y - 14, 46); ctx.fill();
+            if (tw2 && tw2.super) {
+              // SUPER aura: a pulsing red-gold ring outside the gold halo
+              var ag2 = ctx.createRadialGradient(site.x, site.y - 14, 12, site.x, site.y - 14, 60);
+              ag2.addColorStop(0, 'rgba(255,80,40,' + (0.26 + 0.08 * Math.sin(t * 3 + 1)) + ')');
+              ag2.addColorStop(1, 'rgba(255,80,40,0)');
+              ctx.fillStyle = ag2; circle(site.x, site.y - 14, 60); ctx.fill();
+            }
           }
           if (!wolfAway && !catAway) drawMonster(site.kind, site.x, site.y, t, mScale, tq, lvl);
           if (!wolfAway && !catAway && tw2 && tw2.flashT > 0) {
@@ -5660,6 +5785,20 @@
           ctx.strokeText(stxt, site.x, sy);
           ctx.fillStyle = '#ffd23e';
           ctx.fillText(stxt, site.x, sy);
+          // a SUPER tower wears a red SUPER pill above its stars,
+          // where the LV UP! badge sits on lower towers (a SUPER
+          // tower is already maxed, so the two never overlap)
+          if (tw2 && tw2.super) {
+            var sBy = sy - 17 + (reduceMotion ? 0 : Math.sin(t * 5 + site.x * 0.1) * 2.5);
+            ctx.fillStyle = '#ff4d2e';
+            rr(site.x - 30, sBy - 10, 60, 20, 10); ctx.fill();
+            ctx.strokeStyle = 'rgba(255,210,62,.95)'; ctx.lineWidth = 2;
+            rr(site.x - 30, sBy - 10, 60, 20, 10); ctx.stroke();
+            ctx.font = '900 12px "Baloo 2", sans-serif';
+            ctx.fillStyle = '#fff3d6';
+            ctx.fillText('SUPER', site.x, sBy + 0.5);
+            ctx.font = '800 11px "Baloo 2", sans-serif';
+          }
           // a banked pick puts the gold LV UP! badge back over
           // every tower below level 3 — tapping the badge (or
           // the tower) upgrades it on the spot, no picker. The
@@ -5700,7 +5839,100 @@
       ctx.fillStyle = '#ff5d8f'; circle(x - 2, y - 1, 1.8); ctx.fill();
       ctx.fillStyle = '#4dc9ff'; circle(x + 2, y - 1, 1.8); ctx.fill();
     }
+    /* parade-float boss drawing (canvas style, same palette as the
+       rest of the game): a big decorated float — flatbed with
+       gold trim, spinning wheels, pumpkins, candy and pennant
+       banners — with a little witch-hat kid riding on top. Drawn
+       in the boss's own scale (k.scale ~1.9), so it reads far
+       bigger than a normal kid; the wheels spin with distance
+       travelled and the whole float bobs gently as it rolls. */
+    function drawFloatBoss(k, t) {
+      var s = k.scale;
+      var x = k.x, y = k.y - Math.abs(Math.sin(k.bob)) * 2;
+      // wide shadow under the float
+      ctx.fillStyle = 'rgba(12,6,30,.4)';
+      ctx.beginPath(); ctx.ellipse(k.x, k.y + 3, 48, 6, 0, 0, 6.3); ctx.fill();
+      ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+      var wheelSpin = k.dist / 9;
+      // wheels (spin with the road)
+      [-26, 26].forEach(function (wx) {
+        ctx.fillStyle = '#2a1608';
+        circle(wx, -6, 9); ctx.fill();
+        ctx.strokeStyle = '#ffd23e'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.arc(wx, -6, 9, 0, 6.3); ctx.stroke();
+        ctx.beginPath();
+        for (var si = 0; si < 4; si++) {
+          var sa = wheelSpin + si * Math.PI / 2;
+          ctx.moveTo(wx, -6);
+          ctx.lineTo(wx + Math.cos(sa) * 8, -6 + Math.sin(sa) * 8);
+        }
+        ctx.stroke();
+        ctx.fillStyle = '#ffd23e'; circle(wx, -6, 2.6); ctx.fill();
+      });
+      // flatbed with gold trim
+      ctx.fillStyle = '#5b2a86';
+      rr(-36, -30, 72, 24, 6); ctx.fill();
+      ctx.strokeStyle = '#ffd23e'; ctx.lineWidth = 1.8;
+      rr(-36, -30, 72, 24, 6); ctx.stroke();
+      ctx.fillStyle = '#7a3fb0';
+      rr(-36, -30, 72, 7, 6); ctx.fill();
+      // pumpkins riding on the bed
+      [-24, 0, 24].forEach(function (px, pi) {
+        var pr = pi === 1 ? 9 : 7.5;
+        ctx.fillStyle = '#ff7a1a';
+        circle(px, -32, pr); ctx.fill();
+        ctx.fillStyle = '#7ee06f';
+        rr(px - 1, -32 - pr - 3, 2.4, 4, 1); ctx.fill();
+        ctx.fillStyle = '#2a1830';
+        circle(px - 3, -33, 1.4); ctx.fill();
+        circle(px + 3, -33, 1.4); ctx.fill();
+        ctx.strokeStyle = '#2a1830'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(px, -30.5, 2.6, 0.15, 2.99); ctx.stroke();
+      });
+      // candy scattered on the bed
+      var candyCols = ['#ff5d8f', '#4dc9ff', '#ffd23e', '#7ee06f'];
+      for (var ci = 0; ci < 6; ci++) {
+        ctx.fillStyle = candyCols[ci % candyCols.length];
+        circle(-30 + ci * 12, -10, 2.2); ctx.fill();
+      }
+      // pennant banner strung across the back
+      ctx.strokeStyle = '#ffd23e'; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-34, -44); ctx.quadraticCurveTo(0, -38, 34, -44); ctx.stroke();
+      for (var fi = 0; fi < 5; fi++) {
+        var fx = -27 + fi * 13.5;
+        ctx.fillStyle = fi % 2 ? '#ff5d8f' : '#ffd23e';
+        ctx.beginPath(); ctx.moveTo(fx - 4, -43); ctx.lineTo(fx + 4, -43); ctx.lineTo(fx, -36); ctx.closePath(); ctx.fill();
+      }
+      // the kid riding on top, waving: skin face, witch hat
+      ctx.fillStyle = '#ffd9b0';
+      circle(0, -46, 6.5); ctx.fill();
+      ctx.fillStyle = '#3a2314';
+      circle(-4.5, -50.5, 2.6); ctx.fill();
+      circle(0, -51.5, 3); ctx.fill();
+      circle(4.5, -50.5, 2.6); ctx.fill();
+      ctx.fillStyle = '#2a1830';
+      circle(-2.4, -46.5, 1.2); ctx.fill();
+      circle(2.4, -46.5, 1.2); ctx.fill();
+      ctx.strokeStyle = '#a33b1f'; ctx.lineWidth = 1.1; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, -44.5, 2.6, 0.35, 2.79); ctx.stroke();
+      // little witch hat
+      ctx.fillStyle = '#241245';
+      ctx.beginPath(); ctx.moveTo(-8, -50); ctx.lineTo(8, -50); ctx.lineTo(0, -62); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffd23e';
+      rr(-8, -51, 16, 2.4, 1); ctx.fill();
+      // waving arm
+      ctx.strokeStyle = '#ffd9b0'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      var wave = Math.sin(t * 6) * 3;
+      ctx.beginPath(); ctx.moveTo(6, -40); ctx.lineTo(12, -48 + wave); ctx.stroke();
+      ctx.restore();
+      // boss HP bar: wide, above the float (knockers too)
+      if ((k.mode === 'walk' || k.mode === 'knock') && k.hp < k.hpMax) {
+        ctx.fillStyle = 'rgba(10,5,25,.8)'; rr(x - 34, y - 126, 68, 7, 3.5); ctx.fill();
+        ctx.fillStyle = '#ff5d4d'; rr(x - 32, y - 125, 64 * Math.max(0, k.hp / k.hpMax), 5, 2.5); ctx.fill();
+      }
+    }
     function drawKid(k, t) {
+      if (k.boss) { drawFloatBoss(k, t); return; }
       var s = k.scale;
       var jump = 0;
       if (k.mode === 'cheer') jump = -Math.abs(Math.sin(k.bob)) * 9;
@@ -7028,10 +7260,14 @@
       cardEls[c.kind] = d;
       choiceGrid.appendChild(d);
     });
-    /* show exactly this game's six cards, in CARD_DEFS order; the
-       other six sit the game out (display:none keeps the 3x2 grid) */
+    /* show this game's cards, in CARD_DEFS order; the ones that sit
+       the game out hide (display:none keeps the grid tidy). Campaign
+       shows its six; endless shows all twelve. */
     function refreshCards() {
-      var kinds = rosterKinds();
+      // endless mode fields the FULL roster: all twelve monsters
+      // are on the cards. Campaign keeps the per-game rotation —
+      // six cards, which six rotates with gameNo (see rosterKinds)
+      var kinds = runMode === 'endless' ? ROSTER_POOL.slice() : rosterKinds();
       CARD_DEFS.forEach(function (c) {
         cardEls[c.kind].style.display = kinds.indexOf(c.kind) >= 0 ? '' : 'none';
       });
@@ -7048,10 +7284,16 @@
     function doUpgrade(tw) {
       tw.growFrom = LVL_SCALE[tw.level - 1];
       tw.level++;
+      // late upgrades are worth more: this level's damage is
+      // multiplied by (1 + 0.04 x the current wave), on top of the
+      // x1.8 per-level growth — a tower levelled at wave 25 gains
+      // twice the attack of one levelled at wave 5 (see twWaveBonus)
+      var upMult = 1 + WAVE_UPGRADE_BONUS * state.wave;
+      tw.waveBonus = (tw.waveBonus || 1) * upMult;
       tw.growT = 0;      // the grow-up animation (stars + swelling) starts
       tw.flashT = 0.55;  // ...with a bright flash over the tower
       levelUpSound();
-      addFloat(tw.x, tw.y - 78, 'Lv ' + tw.level + '!', '#ffd23e', 19);
+      addFloat(tw.x, tw.y - 78, 'Lv ' + tw.level + '! ATK +' + Math.round((upMult - 1) * 100) + '%', '#ffd23e', 19);
       // one pick = one action: the pick is spent now that the
       // upgrade has landed — and both first-time hint bubbles
       // go away with it (the tower bubble's job is done, and
@@ -7061,6 +7303,72 @@
       state.towerHintActive = false;
       state.pendingKind = null;
       state.pickMode = null;
+      syncHUD(true);
+    }
+    /* ---------------- SUPER fusion ----------------
+       Two identical Lv3 towers fuse into one SUPER tower: tap a
+       Lv3 tower that has a same-kind Lv3 twin and a confirm popup
+       offers the fuse. Fusing is FREE (no pick spent). The tapped
+       tower becomes SUPER — 1.5x damage, 15% faster fire, 10%
+       more range, and every number of its Lv3 ultimate x1.5 (see
+       superMult / superCd / superCount). The twin is consumed and
+       its gravestone stands empty again, ready for a new tower.
+       A SUPER tower can never fuse again, and a Lv3 tower with no
+       identical Lv3 twin keeps the old "Lv 3 MAX" tap. */
+    var fuseTw = null, fusePartner = null;
+    function findFusePartner(tw) {
+      var bestP = null, bestD = Infinity;
+      state.towers.forEach(function (o) {
+        if (o === tw || o.kind !== tw.kind || o.level < 3 || o.super) return;
+        var d = Math.hypot(o.x - tw.x, o.y - tw.y);
+        if (d < bestD) { bestD = d; bestP = o; }
+      });
+      return bestP;
+    }
+    function openFuse(tw, partner) {
+      fuseTw = tw; fusePartner = partner;
+      state.choosing = true;
+      var fs = document.getElementById('fuseSub');
+      if (fs) fs.textContent = 'Fuse two Lv3 ' + TOWER_DEFS[tw.kind].nm + 's into one SUPER ' + TOWER_DEFS[tw.kind].nm + '! The twin is consumed and its grave stands empty again. Free — no pick spent.';
+      var fe = document.getElementById('fuseChoice');
+      if (fe) { fe.classList.add('show'); fe.setAttribute('aria-hidden', 'false'); }
+      if (soundOn) { ensureAudio(); happySound(); }
+      syncHUD(true);
+    }
+    function closeFuse() {
+      fuseTw = null; fusePartner = null;
+      state.choosing = false;
+      var fe = document.getElementById('fuseChoice');
+      if (fe) { fe.classList.remove('show'); fe.setAttribute('aria-hidden', 'true'); }
+    }
+    function doFuse() {
+      var tw = fuseTw, partner = fusePartner;
+      if (!tw || !partner || tw.level < 3 || partner.level < 3 || partner.super || state.towers.indexOf(partner) < 0) { closeFuse(); return; }
+      // the tapped tower goes SUPER, with the grow-up fanfare
+      tw.super = true;
+      tw.growFrom = LVL_SCALE[tw.level - 1];
+      tw.growT = 0;
+      tw.flashT = 0.55;
+      // the twin is consumed: its tower leaves the field and its
+      // gravestone stands empty again for a new monster
+      var pi = state.towers.indexOf(partner);
+      if (pi >= 0) state.towers.splice(pi, 1);
+      SITES.forEach(function (s) {
+        if (s.tower === partner) {
+          s.tower = null; s.kind = null; s.phase = 'empty'; s.anim = 0;
+          s.shakeAge = -1; s.shakeIn = 2 + Math.random() * 4;
+        }
+      });
+      // clear the twin's flying candy so nothing chases from a
+      // tower that no longer stands (field effects it left behind
+      // expire on their own)
+      state.projs = state.projs.filter(function (p) { return p.src !== partner; });
+      state.vortexes = state.vortexes.filter(function (vx) { return vx.src !== partner; });
+      state.crows = state.crows.filter(function (cr) { return cr.src !== partner; });
+      state.miniGhosts = state.miniGhosts.filter(function (mg) { return mg.src !== partner; });
+      levelUpSound();
+      addFloat(tw.x, tw.y - 78, 'SUPER!', '#ff6a3d', 22);
+      closeFuse();
       syncHUD(true);
     }
     /* ---------------- controls & loop ---------------- */
@@ -7237,6 +7545,10 @@
       if (ch) { ch.classList.remove('show'); ch.setAttribute('aria-hidden', 'true'); }
       syncHUD(true);
     });
+    /* fuse popup buttons: FUSE runs the fusion, Later closes the
+       popup and keeps both towers (nothing is spent either way) */
+    document.getElementById('btnFuseDo').addEventListener('click', function () { if (fuseTw && fusePartner) doFuse(); });
+    document.getElementById('btnFuseCancel').addEventListener('click', function () { if (fuseTw) closeFuse(); });
     var bs = document.getElementById('btnStart');
     if (bs) bs.addEventListener('click', startGame); // overlay removed 2026-10-29
     /* the top Start button: before the game starts it enters (which
@@ -7254,6 +7566,9 @@
        same. Whoever wants the NEXT game must say so before
        calling this (only PLAY AGAIN does) */
     function restartRun() {
+      // a fuse popup left open is closed on restart (its towers
+      // no longer exist after resetGame rebuilds the field)
+      closeFuse();
       // a restart before any mode was ever picked (top Restart
       // tapped before a mode is chosen) asks for the mode first
       // instead of starting a modeless run
@@ -7398,7 +7713,19 @@
         if (d < tappedD) { tappedD = d; tappedTw = tw; }
       });
       if (tappedTw) {
-        if (tappedTw.level >= 3) addFloat(tappedTw.x, tappedTw.y - 62, 'Lv 3 MAX \u2605\u2605\u2605', '#ffd23e', 14);
+        if (tappedTw.level >= 3) {
+          // a SUPER tower is already fused: nothing more to do
+          if (tappedTw.super) { addFloat(tappedTw.x, tappedTw.y - 62, 'SUPER \u2605\u2605\u2605', '#ff6a3d', 14); }
+          // two identical Lv3 towers fuse into one SUPER tower
+          // (free — no pick spent); a Lv3 with no twin stays MAX.
+          // Only offered in plain play: never while a picker or a
+          // picked card is in flight (those taps belong to it)
+          else {
+            var fuseMate = (!state.choosing && !state.pendingKind) ? findFusePartner(tappedTw) : null;
+            if (fuseMate) openFuse(tappedTw, fuseMate);
+            else addFloat(tappedTw.x, tappedTw.y - 62, 'Lv 3 MAX \u2605\u2605\u2605', '#ffd23e', 14);
+          }
+        }
         else if (pickCueActive()) doUpgrade(tappedTw);
         else addFloat(tappedTw.x, tappedTw.y - 62, 'Lv ' + tappedTw.level + ' \u00b7 chased ' + tappedTw.kills + ' kids', '#ffe9a8', 13.5);
         return;
