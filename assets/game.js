@@ -1063,6 +1063,7 @@
     var MINI_GHOST_CD = 6, MINI_GHOST_DUR = 1.5, MINI_GHOST_CARRY = 80; // ghost Lv3: seconds between releases, carry time, backward carry speed px/s
     var POUNCE_CD = 7, POUNCE_PIN = 2, POUNCE_DPS = 12, POUNCE_FLY = 0.35; // black cat Lv3 pounce: cooldown / pin seconds / scratch dps / leap seconds each way
     var NET_R = 90, NET_DUR = 4, NET_SLOW = 0.30, NET_DRAG = 26; // spider Lv3 net zone: radius / seconds / crawl fraction / drag-back px/s
+    var NET_CD = 12; // spider Lv3 giant net: seconds between giant nets — between giants the spider throws its small webs as usual
     var ACID_R = 72, ACID_DPS = 9, ACID_SLOW = 0.45;        // slime Lv3 acid pool: radius / bite per second / pace fraction
     var plagueDepth = 0;                                    // witch Lv3 plague: live chain depth, so bursts never recurse forever
     /* -------- tower levels: every monster grows Lv1 -> Lv2 -> Lv3 --------
@@ -2600,12 +2601,15 @@
       tw.cd = fireRate(tw, lvI);
       tw.throwT = THROW_DUR;
       if (tw.proj === 'web') {
-        if (tw.level === 3) {
-          // Lv3 net: one big net laid flat on the road — every
+        if (tw.level === 3 && (tw.netCd || 0) <= 0) {
+          // Lv3 giant net: one big net laid flat on the road — every
           // kid that steps into it is snared and dragged back
-          // (the snare and drag tick in the update/kid loops)
+          // (the snare and drag tick in the update/kid loops).
+          // The giant net only comes out once every NET_CD seconds;
+          // between giants the spider throws its small webs as usual
           state.netZones.push({ x: tgt.x, y: tgt.y - 2, r: NET_R, t: 0, dur: NET_DUR, slowF: NET_SLOW, src: tw, seed: Math.random() });
           addFloat(tgt.x, tgt.y - 40, 'NET!', '#cfe8ff', 13);
+          tw.netCd = NET_CD;
         } else {
           state.projs.push({
             x: tw.x, y: tw.y - 26, tx: tgt, kind: 'web', color: '#e8e4f5',
@@ -2878,7 +2882,7 @@
           if (site.anim >= RISE_DUR) {
             site.phase = 'built'; site.anim = 0;
             var def = TOWER_DEFS[site.kind];
-            var tw = { x: site.x, y: site.y, kind: site.kind, range: def.range, rate: def.rate, dmg: def.dmg, proj: def.proj, cd: 0.35, throwT: 0, level: 1, kills: 0, growT: -1, growFrom: LVL_SCALE[0], flashT: 0, buffT: 0, armGone: false, armsOut: 0, leap: null, leapCd: 1.6, pounce: null, pounceCd: 3 };
+            var tw = { x: site.x, y: site.y, kind: site.kind, range: def.range, rate: def.rate, dmg: def.dmg, proj: def.proj, cd: 0.35, throwT: 0, level: 1, kills: 0, growT: -1, growFrom: LVL_SCALE[0], flashT: 0, buffT: 0, armGone: false, armsOut: 0, leap: null, leapCd: 1.6, pounce: null, pounceCd: 3, netCd: 0 };
             site.tower = tw;
             state.towers.push(tw);
             popSound();
@@ -3114,6 +3118,9 @@
           if (tw.kind === 'cat' && tw.level === 3 && !tw.pounce) tw.pounceCd = (tw.pounceCd == null ? 3 : tw.pounceCd) - dt;
           // a Lv3 ghost's mini-ghost clock ticks the same way
           if (tw.kind === 'ghost' && tw.level === 3 && (tw.miniCd || 0) > 0) tw.miniCd -= dt;
+          // a Lv3 spider's giant-net clock ticks on its own rhythm,
+          // whether or not its web spray is ready to fly
+          if (tw.kind === 'spider' && tw.level === 3 && (tw.netCd || 0) > 0) tw.netCd -= dt;
           if (tw.cd > 0) return;
           // a werewolf out on its pounce cannot howl mid-maul: its
           // howl clock simply waits until it is back on its stone
@@ -6934,7 +6941,7 @@
     var CARD_DEFS = [
       { kind: 'franken', nm: 'Franken Tower', desc: 'Chain lightning · Lv3 triple storm' },
       { kind: 'ghost', nm: 'Ghost Tower', desc: 'Piercing lollipops · Lv3 ghost carriers' },
-      { kind: 'spider', nm: 'Spider Tower', desc: 'Web spray · Lv3 giant net' },
+      { kind: 'spider', nm: 'Spider Tower', desc: 'Web spray · Lv3 giant net every 12s' },
       { kind: 'witch', nm: 'Witch Tower', desc: 'Poison mist · Lv3 plague bursts' },
       { kind: 'zombie', nm: 'Zombie Tower', desc: 'Thrown arm · Lv3 two arms' },
       { kind: 'mummy', nm: 'Mummy Tower', desc: 'Sand whirlwind · Lv3 sandstorm' },
