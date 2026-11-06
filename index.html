@@ -1008,6 +1008,11 @@
         font-family: inherit;
         color: var(--ink);
         background: var(--panel);
+        /* pick cards are slightly see-through (alpha .8) so the game
+           scene shows faintly behind them; text and icons stay fully
+           opaque. The plain line above is the fallback for browsers
+           without color-mix — they keep the old solid card. */
+        background: color-mix(in srgb, var(--panel) 80%, transparent);
         border: 2px solid var(--panel-line);
         border-radius: 14px;
         padding: 8px 2px 7px;
