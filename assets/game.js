@@ -999,9 +999,10 @@
          in a heavy slow. Bat — a sonic ring burst around itself.
          Scarecrow — sends a crow to ride one kid, pecking it.
          Zombie — throws its own arm out and back, hitting both ways.
-         Werewolf — its howl speeds nearby towers; AND every few
-         seconds it transforms into a giant wolf, pounces onto the
-         road and mauls the kids there with huge claw swipes.
+         Werewolf — its howl speeds nearby towers; at Lv3 it ALSO
+         transforms into a giant wolf, pounces onto the road and
+         mauls the kids there with huge claw swipes (Lv1/Lv2 only
+         ever howl — the pounce is a Lv3 power).
          Slime — a goo ball that melts a kid's armour for a while
          AND stings a little on impact: the ball itself deals a
          small bite of direct damage (its dmg below), the melt is
@@ -1052,6 +1053,18 @@
     var PILE_DUR = 12;                                     // …seconds a pile sits on the road if nobody bumps it
     var PILE_BLOCK = 0.8;                                  // …seconds a kid is held up by each bump
     var CRIT_CHANCE = 0.3;                                 // black cat paw ball
+    /* -------- level-3 evolutions: every monster's attack changes
+       shape at Lv3 (Lv1/Lv2 keep their old behaviour exactly).
+       The numbers live here so the whole Lv3 kit reads in one
+       place; the per-tower fire/update/draw code below only
+       branches on tw.level === 3. */
+    var PLAGUE_R = 70, PLAGUE_DMG = 14, PLAGUE_CHAIN = 3;   // witch Lv3: plague burst radius / damage / max chain depth
+    var STORM_R = 85, STORM_PUSH = 30;                      // mummy Lv3 sandstorm: radius, backward blow speed px/s
+    var MINI_GHOST_CD = 6, MINI_GHOST_DUR = 1.5, MINI_GHOST_CARRY = 80; // ghost Lv3: seconds between releases, carry time, backward carry speed px/s
+    var POUNCE_CD = 7, POUNCE_PIN = 2, POUNCE_DPS = 12, POUNCE_FLY = 0.35; // black cat Lv3 pounce: cooldown / pin seconds / scratch dps / leap seconds each way
+    var NET_R = 90, NET_DUR = 4, NET_SLOW = 0.30, NET_DRAG = 26; // spider Lv3 net zone: radius / seconds / crawl fraction / drag-back px/s
+    var ACID_R = 72, ACID_DPS = 9, ACID_SLOW = 0.45;        // slime Lv3 acid pool: radius / bite per second / pace fraction
+    var plagueDepth = 0;                                    // witch Lv3 plague: live chain depth, so bursts never recurse forever
     /* -------- tower levels: every monster grows Lv1 -> Lv2 -> Lv3 --------
        Levels no longer come from a tower's OWN kills. Every kid any
        tower chases away adds 1 point to one shared pool; every
@@ -1414,6 +1427,8 @@
         webs: [],                // spider web splats on the road (visual)
         vortexes: [],            // mummy sand whirlwinds chasing kids
         bonePiles: [],           // skeleton bone piles blocking the road
+        miniGhosts: [],          // ghost Lv3: little white ghosts carrying kids back
+        netZones: [],            // spider Lv3: big net zones laid on the road
         parts: [],               // explosion / ambient particles
         floats: [],              // KNOCK! texts etc.
         debris: [],
@@ -1557,6 +1572,9 @@
         webTimer: 0,             // spider web: wrapped up, crawling
         webF: 0.35,              // ...at this fraction of normal pace
         armorDownTimer: 0,       // slime goo: armour melted, hits bite deeper
+        armorZeroTimer: 0,       // slime Lv3 acid pool: armour fully corroded while inside
+        carryT: 0,               // ghost Lv3 mini ghost: being carried back along the road
+        pinT: 0,                 // black cat Lv3 pounce: pinned down, cannot move
         rainTime: 0
       });
       state.spawned++;
@@ -2320,6 +2338,9 @@
        late-wave kids */
     function armored(k, dmg) {
       var a = k.armor || 0;
+      // slime Lv3 acid pool: armour fully corroded while the kid
+      // stands in it — every hit lands at full strength
+      if (k.armorZeroTimer > 0) return dmg;
       // slime goo melts half the kid's defence away while it lasts
       if (k.armorDownTimer > 0) a *= (1 - MELT_FRAC);
       return dmg * (1 - a);
@@ -2331,7 +2352,7 @@
        exactly like a plain hit always did. The one exception is the
        castle's own candy (hitKnocker): it may also hit a kid who is
        knocking on the door, and dropping one frees its crowd slot. */
-    function damageKid(k, dmg, src, hitKnocker) {
+    function damageKid(k, dmg, src, hitKnocker, isPoison) {
       if (!k) return;
       if (k.mode !== 'walk' && !(hitKnocker && isPlazaKnocker(k))) return;
       k.hp -= armored(k, dmg);
@@ -2348,9 +2369,33 @@
         // levels come from the shared points pool now (see
         // checkUnlock), never from one tower's own kills
         if (src) src.kills++;
+        // witch Lv3 plague: a kid that DIES from the poison
+        // bursts, spraying poison damage at the kids around it —
+        // and a kid the burst kills bursts in turn, up to the
+        // chain cap (plagueDepth is the live recursion guard)
+        if (isPoison && src && src.kind === 'witch' && src.level === 3 && plagueDepth < PLAGUE_CHAIN) {
+          plagueDepth++;
+          plagueBurst(k, src);
+          plagueDepth--;
+        }
         syncHUD(true);
         checkUnlock();
       }
+    }
+    /* witch Lv3 plague burst: the dead kid's poison pops — a
+       purple blast that stings every walking kid nearby and can
+       chain through plagueBurst's own damageKid calls (each of
+       those passes isPoison, so a burst kill bursts again) */
+    function plagueBurst(deadK, src) {
+      var bx = deadK.x, by = deadK.y - 14;
+      burstCandy(bx, by, 10, 80, by + 4);
+      state.rings.push({ x: bx, y: by, r: 8, maxR: PLAGUE_R, t: 0, life: 0.4, color: '157,92,255' });
+      addFloat(bx, by - 30, 'PLAGUE!', '#b78cff', 14);
+      state.kids.forEach(function (o) {
+        if (o === deadK || o.mode !== 'walk') return;
+        if (Math.hypot(o.x - bx, (o.y - 12) - by) > PLAGUE_R) return;
+        damageKid(o, PLAGUE_DMG, src, false, true);
+      });
     }
     /* franken bolt: the lightning jumps from the kid it hit to the two
        nearest kids beside them (weaker), and everyone it touches is
@@ -2433,7 +2478,7 @@
           x: k.x, y: k.y - 2, r: p.puddleR || SLIME_PUDDLE_R[0],
           t: 0, dur: p.puddleDur || SLIME_PUDDLE_DUR,
           dps: p.puddleDps || SLIME_PUDDLE_DPS, slowF: p.puddleSlow || SLIME_PUDDLE_SLOW[0],
-          src: src, seed: Math.random() * 10
+          src: src, seed: Math.random() * 10, acid: p.acid || false
         });
         for (var gz = 0; gz < 5; gz++) {
           state.parts.push({
@@ -2506,14 +2551,24 @@
         if (!anyIn) { tw.cd = 0.25; return; }
         tw.cd = fireRate(tw, lvI);
         tw.throwT = THROW_DUR;
-        state.rings.push({ x: tw.x, y: tw.y - 14, r: 8, maxR: range, t: 0, life: 0.45, color: '120,220,255' });
-        state.kids.forEach(function (k) {
-          if (k.mode !== 'walk') return;
-          if (Math.hypot(k.x - tw.x, (k.y - 12) - (tw.y - 12)) > range) return;
-          burstCandy(k.x, k.y - 14, 5, 55, k.y + 4);
-          damageKid(k, dmg, tw);
-        });
-        addFloat(tw.x, tw.y - 66, 'SCREECH!', '#aee6ff', 13);
+        if (tw.level === 3) {
+          // Lv3 sonic storm: THREE rings roll out one after
+          // another, each one hurting and stunning every kid its
+          // edge passes (the damage ticks in the rings loop)
+          for (var sri = 0; sri < 3; sri++) {
+            state.rings.push({ x: tw.x, y: tw.y - 14, r: 8, maxR: range, t: 0, life: 0.45, color: '120,220,255', delay: sri * 0.22, dmg: dmg, src: tw, hit: {}, stun: 1 });
+          }
+          addFloat(tw.x, tw.y - 66, 'SONIC STORM!', '#aee6ff', 13);
+        } else {
+          state.rings.push({ x: tw.x, y: tw.y - 14, r: 8, maxR: range, t: 0, life: 0.45, color: '120,220,255' });
+          state.kids.forEach(function (k) {
+            if (k.mode !== 'walk') return;
+            if (Math.hypot(k.x - tw.x, (k.y - 12) - (tw.y - 12)) > range) return;
+            burstCandy(k.x, k.y - 14, 5, 55, k.y + 4);
+            damageKid(k, dmg, tw);
+          });
+          addFloat(tw.x, tw.y - 66, 'SCREECH!', '#aee6ff', 13);
+        }
         popSound();
         return;
       }
@@ -2523,35 +2578,77 @@
       tw.cd = fireRate(tw, lvI);
       tw.throwT = THROW_DUR;
       if (tw.proj === 'web') {
-        state.projs.push({
-          x: tw.x, y: tw.y - 26, tx: tgt, kind: 'web', color: '#e8e4f5',
-          speed: 300, dmg: dmg, t: 0, src: tw, psize: LVL_PROJ[lvI],
-          webT: WEB_TIME[lvI], webF: WEB_SLOW[lvI], webR: WEB_SPLASH[lvI]
-        });
+        if (tw.level === 3) {
+          // Lv3 net: one big net laid flat on the road — every
+          // kid that steps into it is snared and dragged back
+          // (the snare and drag tick in the update/kid loops)
+          state.netZones.push({ x: tgt.x, y: tgt.y - 2, r: NET_R, t: 0, dur: NET_DUR, slowF: NET_SLOW, src: tw, seed: Math.random() });
+          addFloat(tgt.x, tgt.y - 40, 'NET!', '#cfe8ff', 13);
+        } else {
+          state.projs.push({
+            x: tw.x, y: tw.y - 26, tx: tgt, kind: 'web', color: '#e8e4f5',
+            speed: 300, dmg: dmg, t: 0, src: tw, psize: LVL_PROJ[lvI],
+            webT: WEB_TIME[lvI], webF: WEB_SLOW[lvI], webR: WEB_SPLASH[lvI]
+          });
+        }
       } else if (tw.proj === 'goo') {
+        // Lv3 acid pool: bigger, meaner, stickier — and it eats
+        // a kid's armour away entirely while they stand in it
         state.projs.push({
           x: tw.x, y: tw.y - 26, tx: tgt, kind: 'goo', color: '#7ee06f',
           speed: 250, dmg: dmg, t: 0, src: tw, psize: LVL_PROJ[lvI],
           meltT: MELT_DUR[lvI],
-          puddleR: SLIME_PUDDLE_R[lvI], puddleDps: SLIME_PUDDLE_DPS * [1, 1.4, 1.9][lvI],
-          puddleSlow: SLIME_PUDDLE_SLOW[lvI], puddleDur: SLIME_PUDDLE_DUR
+          puddleR: tw.level === 3 ? ACID_R : SLIME_PUDDLE_R[lvI],
+          puddleDps: tw.level === 3 ? ACID_DPS : SLIME_PUDDLE_DPS * [1, 1.4, 1.9][lvI],
+          puddleSlow: tw.level === 3 ? ACID_SLOW : SLIME_PUDDLE_SLOW[lvI],
+          puddleDur: SLIME_PUDDLE_DUR, acid: tw.level === 3
         });
       } else if (tw.proj === 'crow') {
-        // the crow flies off the scarecrow's arm and rides its kid,
-        // pecking steadily — the pecking itself ticks in update()
-        state.crows.push({ tx: tgt, src: tw, dps: dmg * 0.55, t: 0, dur: CROW_DUR[lvI], x: tw.x, y: tw.y - 36, peck: 0 });
+        if (tw.level === 3) {
+          // Lv3 murder of crows: FIVE of them, each riding a
+          // different kid — the pecking itself ticks in update()
+          var crowTargets = [];
+          state.kids.forEach(function (k) {
+            if (k.mode !== 'walk') return;
+            var d = Math.hypot(k.x - tw.x, k.y - tw.y);
+            if (d < range) crowTargets.push(k);
+          });
+          crowTargets.sort(function (a, b) { return b.dist - a.dist; });
+          crowTargets.slice(0, 5).forEach(function (ck, ci) {
+            state.crows.push({ tx: ck, src: tw, dps: dmg * 0.55, t: 0, dur: CROW_DUR[lvI], x: tw.x + (ci - 2) * 8, y: tw.y - 36 - (ci % 2) * 6, peck: 0 });
+          });
+          addFloat(tw.x, tw.y - 66, 'MURDER OF CROWS!', '#d9c8ff', 13);
+        } else {
+          // the crow flies off the scarecrow's arm and rides its kid,
+          // pecking steadily — the pecking itself ticks in update()
+          state.crows.push({ tx: tgt, src: tw, dps: dmg * 0.55, t: 0, dur: CROW_DUR[lvI], x: tw.x, y: tw.y - 36, peck: 0 });
+        }
       } else if (tw.proj === 'arm') {
         // the zombie tears off its own forearm and hurls it in a
         // straight line: it bites every kid it passes through, then
         // crawls back and bites them again on the return leg (the
         // flight itself ticks in the projectile loop)
-        var mx = tw.x, my = tw.y - 26;
-        var ang = Math.atan2((tgt.y - 14) - my, tgt.x - mx);
-        tw.armGone = true;
-        state.projs.push({
-          kind: 'arm', x: mx, y: my, vx: Math.cos(ang), vy: Math.sin(ang), ang: ang,
-          speed: 330, dmg: dmg, t: 0, traveled: 0, maxTravel: ARM_LEN * (1 + 0.1 * lvI),
-          phase: 'out', hitOut: {}, hitBack: {}, src: tw, psize: LVL_PROJ[lvI]
+        var armTargets = [tgt];
+        if (tw.level === 3) {
+          // Lv3: BOTH arms fly at once, at the two furthest kids
+          var armAlt = null, armAltD = -1;
+          state.kids.forEach(function (k) {
+            if (k.mode !== 'walk' || k === tgt) return;
+            var d = Math.hypot(k.x - tw.x, k.y - tw.y);
+            if (d < range && k.dist > armAltD) { armAlt = k; armAltD = k.dist; }
+          });
+          if (armAlt) armTargets.push(armAlt);
+        }
+        armTargets.forEach(function (at) {
+          var mx = tw.x, my = tw.y - 26;
+          var ang = Math.atan2((at.y - 14) - my, at.x - mx);
+          tw.armGone = true;
+          tw.armsOut = (tw.armsOut || 0) + 1;
+          state.projs.push({
+            kind: 'arm', x: mx, y: my, vx: Math.cos(ang), vy: Math.sin(ang), ang: ang,
+            speed: 330, dmg: dmg, t: 0, traveled: 0, maxTravel: ARM_LEN * (1 + 0.1 * lvI),
+            phase: 'out', hitOut: {}, hitBack: {}, src: tw, psize: LVL_PROJ[lvI]
+          });
         });
       }
       popSound();
@@ -2717,7 +2814,7 @@
           if (site.anim >= RISE_DUR) {
             site.phase = 'built'; site.anim = 0;
             var def = TOWER_DEFS[site.kind];
-            var tw = { x: site.x, y: site.y, kind: site.kind, range: def.range, rate: def.rate, dmg: def.dmg, proj: def.proj, cd: 0.35, throwT: 0, level: 1, kills: 0, growT: -1, growFrom: LVL_SCALE[0], flashT: 0, buffT: 0, armGone: false, leap: null, leapCd: 1.6 };
+            var tw = { x: site.x, y: site.y, kind: site.kind, range: def.range, rate: def.rate, dmg: def.dmg, proj: def.proj, cd: 0.35, throwT: 0, level: 1, kills: 0, growT: -1, growFrom: LVL_SCALE[0], flashT: 0, buffT: 0, armGone: false, armsOut: 0, leap: null, leapCd: 1.6, pounce: null, pounceCd: 3 };
             site.tower = tw;
             state.towers.push(tw);
             popSound();
@@ -2948,11 +3045,19 @@
         state.towers.forEach(function (tw) {
           if (tw.throwT > 0) tw.throwT = Math.max(0, tw.throwT - dt);
           tw.cd = (tw.cd || 0) - dt;
+          // a Lv3 black cat's pounce clock ticks on its own rhythm,
+          // whether or not its paw balls are ready to fly
+          if (tw.kind === 'cat' && tw.level === 3 && !tw.pounce) tw.pounceCd = (tw.pounceCd == null ? 3 : tw.pounceCd) - dt;
+          // a Lv3 ghost's mini-ghost clock ticks the same way
+          if (tw.kind === 'ghost' && tw.level === 3 && (tw.miniCd || 0) > 0) tw.miniCd -= dt;
           if (tw.cd > 0) return;
           // a werewolf out on its pounce cannot howl mid-maul: its
           // howl clock simply waits until it is back on its stone
           // (the howl rhythm itself is untouched)
           if (tw.leap) return;
+          // a black cat out on its pounce cannot bat paw balls
+          // mid-pin: its ball clock simply waits until it bounds home
+          if (tw.pounce) return;
           // this tower's level scales everything it throws: damage
           // x1.6 a level, range +10% a level, interval -15% a level,
           // bullets x1.4 a level — plus its own special growth below
@@ -2963,6 +3068,24 @@
               tw.proj === 'arm' || tw.proj === 'howl' || tw.proj === 'goo') {
             fireSpecial(tw, lvI, range);
             return;
+          }
+          // black cat Lv3 pounce: every few seconds the cat bounds
+          // onto the foremost kid in range and pins it down (the
+          // pin itself ticks in the pounce loop below; the cat
+          // keeps batting paw balls between pounces)
+          if (tw.kind === 'cat' && tw.level === 3 && !tw.pounce && (tw.pounceCd || 0) <= 0) {
+            var pk = null, pkD = -1;
+            state.kids.forEach(function (k) {
+              if (k.mode !== 'walk') return;
+              var d = Math.hypot(k.x - tw.x, k.y - tw.y);
+              if (d < range && k.dist > pkD) { pk = k; pkD = k.dist; }
+            });
+            if (pk) {
+              tw.pounce = { k: pk, phase: 'out', t: 0, x: tw.x, y: tw.y - 26, sx: tw.x, sy: tw.y - 26, tx: pk.x, ty: pk.y - 14 };
+              tw.pounceCd = POUNCE_CD;
+              addFloat(tw.x, tw.y - 66, 'POUNCE!', '#ffb03a', 13);
+              popSound();
+            } else tw.pounceCd = 0.5;
           }
           var best = null, bestD = -1;
           state.kids.forEach(function (k) {
@@ -2987,11 +3110,14 @@
                 });
                 if (vAlt) vTargets.push(vAlt);
               }
+              // Lv3 sandstorm: a much bigger whirlwind that also
+              // blows kids back down the road (see the kid loop)
+              var isStorm = tw.level === 3;
               vTargets.forEach(function (vt) {
                 state.vortexes.push({
-                  x: tw.x, y: tw.y - 26, tx: vt, r: VORT_R[lvI],
+                  x: tw.x, y: tw.y - 26, tx: vt, r: isStorm ? STORM_R : VORT_R[lvI],
                   dps: VORT_DPS[lvI], slowF: VORT_SLOW, t: 0,
-                  life: VORT_LIFE[lvI], src: tw, seed: Math.random()
+                  life: VORT_LIFE[lvI], src: tw, seed: Math.random(), storm: isStorm
                 });
               });
             } else if (tw.proj === 'pile') {
@@ -3000,15 +3126,23 @@
               // so the field never gets cluttered
               var livePiles = 0;
               state.bonePiles.forEach(function (bp) { if (bp.src === tw) livePiles++; });
-              if (livePiles < 2) {
-                var ppt = pointAt(best.dist);
+              // Lv3 bone wall: THREE piles in a row along the road
+              // (40px apart, back from the furthest kid) — the
+              // triple counts as one throw, at most six piles live
+              var pileN = (tw.level === 3) ? Math.min(3, 6 - livePiles) : (livePiles < 2 ? 1 : 0);
+              for (var pqi = 0; pqi < pileN; pqi++) {
+                var pdist = Math.max(0, best.dist - pqi * 40);
+                var ppt = pointAt(pdist);
                 state.bonePiles.push({
-                  x: ppt.x, y: ppt.y, dist: best.dist,
+                  x: ppt.x, y: ppt.y, dist: pdist,
                   bones: PILE_BONES[lvI], maxBones: PILE_BONES[lvI],
                   t: 0, dur: PILE_DUR, src: tw, seed: Math.random()
                 });
-                addFloat(ppt.x, ppt.y - 26, 'BONES!', '#f2f2f2', 13);
-                burstCandy(ppt.x, ppt.y - 6, 5, 40, ppt.y + 4);
+              }
+              if (pileN > 0) {
+                var ppt0 = pointAt(best.dist);
+                addFloat(ppt0.x, ppt0.y - 26, pileN > 1 ? 'BONE WALL!' : 'BONES!', '#f2f2f2', 13);
+                burstCandy(ppt0.x, ppt0.y - 6, 5, 40, ppt0.y + 4);
               }
             } else if (tw.proj === 'lolli') {
               // ghost tower: the lollipop flies STRAIGHT and pierces —
@@ -3026,28 +3160,49 @@
                   maxTravel: range + 80, hit: {}, src: tw, psize: LVL_PROJ[lvI]
                 });
               }
+              // ghost Lv3: every few seconds, three little white
+              // ghosts fly out and carry three kids back down the
+              // road (the carry itself ticks in the update loop)
+              if (tw.level === 3 && (tw.miniCd || 0) <= 0) {
+                tw.miniCd = MINI_GHOST_CD;
+                var mgTargets = [];
+                state.kids.forEach(function (k) {
+                  if (k.mode !== 'walk') return;
+                  var d = Math.hypot(k.x - tw.x, k.y - tw.y);
+                  if (d < range) mgTargets.push(k);
+                });
+                mgTargets.sort(function (a, b) { return b.dist - a.dist; });
+                mgTargets.slice(0, 3).forEach(function (mk) {
+                  state.miniGhosts.push({ k: mk, t: 0, dur: MINI_GHOST_DUR, src: tw, seed: Math.random() * 6 });
+                  addFloat(mk.x, mk.y - 44, 'BOO!', '#f6f2ff', 12);
+                });
+              }
             } else {
               var np = 1;
+              // Lv3 franken: THREE bolts at three different kids
+              // at once — a real lightning storm
+              if (tw.proj === 'bolt' && tw.level === 3) np = 3;
               // Lv3 black cat sometimes bats out a second paw ball
-              if (tw.proj === 'ball' && tw.level === 3 && Math.random() < 0.35) np = 2;
+              else if (tw.proj === 'ball' && tw.level === 3 && Math.random() < 0.35) np = 2;
+              var usedTgts = [best];
               for (var pi2 = 0; pi2 < np; pi2++) {
                 var tgt = best;
-                if (pi2 === 1) {
+                if (pi2 >= 1) {
                   // the bonus shot picks another kid in range if any
                   var alt = null, altD = -1;
                   state.kids.forEach(function (k) {
-                    if (k.mode !== 'walk' || k === best) return;
+                    if (k.mode !== 'walk' || usedTgts.indexOf(k) >= 0) return;
                     var d2 = Math.hypot(k.x - tw.x, k.y - tw.y);
                     if (d2 < range && k.dist > altD) { alt = k; altD = k.dist; }
                   });
-                  if (alt) tgt = alt;
+                  if (alt) { tgt = alt; usedTgts.push(alt); }
                 }
                 var pr = {
                   x: tw.x, y: tw.y - 26, tx: tgt, kind: tw.proj,
                   color: CANDY_COLORS[Math.floor(Math.random() * CANDY_COLORS.length)],
                   speed: 265, dmg: dmg, t: 0, src: tw, psize: LVL_PROJ[lvI]
                 };
-                if (tw.proj === 'bolt') { pr.chain = [2, 3, 4][lvI]; pr.stun = [0.7, 0.95, 1.2][lvI]; }
+                if (tw.proj === 'bolt') { pr.chain = [2, 3, 4][lvI]; pr.stun = (tw.level === 3 ? 2 : [0.7, 0.95, 1.2][lvI]); }
                 if (tw.proj === 'potion') { pr.poisR = [30, 38, 46][lvI]; pr.poisDps = POISON_DPS * [1, 1.35, 1.75][lvI]; pr.slowF = [0.72, 0.64, 0.56][lvI]; }
                 if (tw.proj === 'ball') { pr.critC = [0.3, 0.4, 0.5][lvI]; }
                 state.projs.push(pr);
@@ -3057,6 +3212,42 @@
           }
         });
       }
+
+      // black cat Lv3 pounce: the cat bounds onto the foremost
+      // kid, pins it down and scratches it, then bounds home.
+      // The pin itself freezes the kid (pinT, see the kid loop)
+      // and the scratching ticks here, crediting the cat
+      state.towers.forEach(function (tw) {
+        if (tw.kind !== 'cat' || !tw.pounce) return;
+        var pc = tw.pounce;
+        pc.t += dt;
+        if (!pc.k || pc.k.mode !== 'walk') { pc.phase = 'back'; pc.t = 0; }
+        if (pc.phase === 'out') {
+          var fo = Math.min(1, pc.t / POUNCE_FLY);
+          pc.x = pc.sx + (pc.tx - pc.sx) * fo;
+          pc.y = pc.sy + (pc.ty - pc.sy) * fo - Math.sin(fo * Math.PI) * 30;
+          if (fo >= 1) {
+            pc.phase = 'pin'; pc.t = 0;
+            if (pc.k) {
+              pc.k.pinT = Math.max(pc.k.pinT, POUNCE_PIN);
+              addFloat(pc.k.x, pc.k.y - 48, 'PINNED!', '#ffb03a', 13);
+            }
+          }
+        } else if (pc.phase === 'pin') {
+          if (pc.k) {
+            pc.x = pc.k.x; pc.y = pc.k.y - 14;
+            pc.k.pinT = Math.max(pc.k.pinT, 0.15);
+            damageKid(pc.k, POUNCE_DPS * dt, tw);
+            if (Math.random() < dt * 6) burstCandy(pc.k.x, pc.k.y - 20, 1, 26, pc.k.y + 4);
+          }
+          if (pc.t >= POUNCE_PIN) { pc.phase = 'back'; pc.t = 0; }
+        } else if (pc.phase === 'back') {
+          var fb = Math.min(1, pc.t / POUNCE_FLY);
+          pc.x = pc.tx + (pc.sx - pc.tx) * fb;
+          pc.y = pc.ty + (pc.sy - pc.ty) * fb - Math.sin(fb * Math.PI) * 30;
+          if (fb >= 1) { tw.pounce = null; }
+        }
+      });
 
       // werewolf pounce: after WOLF_LEAP_CD seconds back in
       // werewolf form (counted from the shrink-back finishing),
@@ -3069,6 +3260,9 @@
       // never instead of it
       state.towers.forEach(function (tw) {
         if (tw.kind !== 'werewolf') return;
+        // the pounce is a Lv3 power: at Lv1/Lv2 the werewolf
+        // ONLY howls — it never transforms, never leaps
+        if (tw.level < 3) return;
         var lvW = tw.level - 1;
         // the rest interval only ticks while the werewolf is back
         // in werewolf form: it is measured from the moment the
@@ -3187,7 +3381,7 @@
         if (zn.t >= zn.dur) { state.poisons.splice(zi, 1); continue; }
         state.kids.forEach(function (k) {
           if (k.mode !== 'walk') return;
-          if (Math.hypot(k.x - zn.x, (k.y - 12) - zn.y) < zn.r) damageKid(k, zn.dps * dt, zn.src);
+          if (Math.hypot(k.x - zn.x, (k.y - 12) - zn.y) < zn.r) damageKid(k, zn.dps * dt, zn.src, false, true);
         });
       }
       // slime puddles: zones tick down over ~4s; kids standing in
@@ -3200,7 +3394,13 @@
         if (szn.t >= szn.dur) { state.slimePuddles.splice(szi, 1); continue; }
         state.kids.forEach(function (k) {
           if (k.mode !== 'walk') return;
-          if (Math.hypot(k.x - szn.x, (k.y - 12) - szn.y) < szn.r) damageKid(k, szn.dps * dt, szn.src);
+          if (Math.hypot(k.x - szn.x, (k.y - 12) - szn.y) < szn.r) {
+            damageKid(k, szn.dps * dt, szn.src);
+            // Lv3 acid pool: armour is fully corroded while the
+            // kid stands in it — refreshed every frame, so it
+            // ends the moment they step out
+            if (szn.acid) k.armorZeroTimer = Math.max(k.armorZeroTimer, 0.25);
+          }
         });
       }
       // chain-lightning arcs are pure visual: brief and gone
@@ -3228,9 +3428,24 @@
       // bat screech / werewolf howl rings: expand and fade
       for (var rgi = state.rings.length - 1; rgi >= 0; rgi--) {
         var rg = state.rings[rgi];
+        // a Lv3 bat's second and third rings wait their turn
+        // before rolling out (see fireSpecial)
+        if (rg.delay > 0) { rg.delay -= dt; continue; }
         rg.t += dt;
         var rgf = Math.min(1, rg.t / rg.life);
         rg.r = rg.maxR * (1 - (1 - rgf) * (1 - rgf));
+        // a Lv3 bat ring hurts and stuns every kid it rolls over,
+        // once each, as its edge passes them
+        if (rg.dmg) {
+          state.kids.forEach(function (k) {
+            if (k.mode !== 'walk' || (rg.hit && rg.hit[k.id])) return;
+            if (Math.hypot(k.x - rg.x, (k.y - 12) - rg.y) > rg.r) return;
+            rg.hit[k.id] = true;
+            k.stunTimer = Math.max(k.stunTimer, rg.stun || 0);
+            burstCandy(k.x, k.y - 14, 4, 55, k.y + 4);
+            damageKid(k, rg.dmg, rg.src);
+          });
+        }
         if (rg.t >= rg.life) state.rings.splice(rgi, 1);
       }
       // spider web splats dry out with the slow they caused
@@ -3238,6 +3453,21 @@
         var wb = state.webs[wbi];
         wb.t += dt;
         if (wb.t >= wb.life) state.webs.splice(wbi, 1);
+      }
+      // spider Lv3 net zones: kids standing in the net are
+      // snared (their web crawl) — the drag back down the road
+      // happens in the kid loop below, next to the web crawl
+      for (var nzi = state.netZones.length - 1; nzi >= 0; nzi--) {
+        var nz = state.netZones[nzi];
+        nz.t += dt;
+        if (nz.t >= nz.dur) { state.netZones.splice(nzi, 1); continue; }
+        state.kids.forEach(function (k) {
+          if (k.mode !== 'walk') return;
+          if (Math.hypot(k.x - nz.x, (k.y - 12) - nz.y) < nz.r) {
+            k.webTimer = Math.max(k.webTimer, 0.35);
+            k.webF = nz.slowF;
+          }
+        });
       }
       // mummy sand whirlwinds: each one chases its kid, stinging
       // every kid caught inside it (the half-pace drag is applied
@@ -3260,6 +3490,19 @@
         var bp = state.bonePiles[bpi];
         bp.t += dt;
         if (bp.t >= bp.dur || bp.bones <= 0) state.bonePiles.splice(bpi, 1);
+      }
+      // ghost Lv3 mini ghosts: each one rides its kid and carries
+      // it back down the road, then vanishes and drops the kid —
+      // the kid's own walk stays frozen (carryT) while it is held
+      for (var mgi = state.miniGhosts.length - 1; mgi >= 0; mgi--) {
+        var mg = state.miniGhosts[mgi];
+        mg.t += dt;
+        if (!mg.k || mg.k.mode !== 'walk' || mg.t >= mg.dur) {
+          if (mg.k) mg.k.carryT = 0;
+          state.miniGhosts.splice(mgi, 1); continue;
+        }
+        mg.k.carryT = Math.max(mg.k.carryT, 0.12);
+        mg.k.dist = Math.max(0, mg.k.dist - MINI_GHOST_CARRY * dt);
       }
 
       // projectiles
@@ -3297,7 +3540,9 @@
               damageKid(k, p.dmg, p.src);
             });
             if (ad <= bstep + 4) {
-              if (p.src) p.src.armGone = false; // arm reattached
+              // the arm is home: only reattach it when the LAST
+              // arm is back (a Lv3 zombie throws two at once)
+              if (p.src) { p.src.armsOut = Math.max(0, (p.src.armsOut || 1) - 1); p.src.armGone = p.src.armsOut > 0; }
               state.projs.splice(pi, 1);
               continue;
             }
@@ -3357,6 +3602,9 @@
         if (k.blockTimer > 0) k.blockTimer -= dt;
         if (k.webTimer > 0) k.webTimer -= dt;
         if (k.armorDownTimer > 0) k.armorDownTimer -= dt;
+        if (k.armorZeroTimer > 0) k.armorZeroTimer -= dt;
+        if (k.carryT > 0) k.carryT -= dt;
+        if (k.pinT > 0) k.pinT -= dt;
         if (k.mode === 'walk') {
           // candy rain: a kid standing in the rain stops to pick up candy
           var inRain = false;
@@ -3377,8 +3625,10 @@
             }
           } else {
             if (k.rainTime > 0) k.rainTime = Math.max(0, k.rainTime - dt * 0.7);
-            if (k.stunTimer > 0 || k.blockTimer > 0) {
-              // stunned by lightning or held up by a bone pile: going nowhere
+            if (k.stunTimer > 0 || k.blockTimer > 0 || k.carryT > 0 || k.pinT > 0) {
+              // stunned by lightning, held up by a bone pile,
+              // carried back by a mini ghost or pinned by a cat:
+              // going nowhere
             } else if (k.fleeTimer > 0) {
               // scared by the ghost: run back down the road
               k.fleeTimer -= dt;
@@ -3425,6 +3675,25 @@
                 }
               }
               k.dist += sp * dt;
+              // caught in a Lv3 spider net: the net drags the kid
+              // back down the road while it holds them
+              for (var nzi2 = 0; nzi2 < state.netZones.length; nzi2++) {
+                var nz2 = state.netZones[nzi2];
+                if (Math.hypot(k.x - nz2.x, (k.y - 12) - nz2.y) < nz2.r) {
+                  k.dist = Math.max(0, k.dist - NET_DRAG * dt);
+                  break;
+                }
+              }
+              // caught in a Lv3 mummy sandstorm: the wind shoves
+              // the kid back down the road while the storm holds them
+              for (var vxi3 = 0; vxi3 < state.vortexes.length; vxi3++) {
+                var vx3 = state.vortexes[vxi3];
+                if (!vx3.storm) continue;
+                if (Math.hypot(k.x - vx3.x, (k.y - 12) - vx3.y) < vx3.r) {
+                  k.dist = Math.max(0, k.dist - STORM_PUSH * dt);
+                  break;
+                }
+              }
             }
           }
           var pt = pointAt(Math.max(0, k.dist));
@@ -5260,26 +5529,30 @@
           // the road the giant wolf is drawn with the kids instead
           // and the stone stands empty
           var wolfAway = !!(tw2 && tw2.leap && tw2.leap.phase !== 'grow' && tw2.leap.phase !== 'shrink');
+          // a black cat out on its Lv3 pounce is OFF its stone the
+          // same way: the pouncing cat is drawn over its kid with
+          // the kids instead, and the stone stands empty
+          var catAway = !!(tw2 && tw2.kind === 'cat' && tw2.pounce);
           if (tw2 && tw2.leap && !wolfAway) {
             var morph = tw2.leap.phase === 'grow'
               ? Math.min(1, tw2.leap.t / 0.38)
               : 1 - Math.min(1, tw2.leap.t / 0.3);
             mScale *= 1 + 1.15 * morph * morph;
           }
-          if (lvl === 3 && !wolfAway) {
+          if (lvl === 3 && !wolfAway && !catAway) {
             // full-form aura: a soft golden halo behind the monster
             var ag = ctx.createRadialGradient(site.x, site.y - 14, 4, site.x, site.y - 14, 46);
             ag.addColorStop(0, 'rgba(255,205,70,' + (0.30 + 0.08 * Math.sin(t * 3)) + ')');
             ag.addColorStop(1, 'rgba(255,205,70,0)');
             ctx.fillStyle = ag; circle(site.x, site.y - 14, 46); ctx.fill();
           }
-          if (!wolfAway) drawMonster(site.kind, site.x, site.y, t, mScale, tq, lvl);
-          if (!wolfAway && tw2 && tw2.flashT > 0) {
+          if (!wolfAway && !catAway) drawMonster(site.kind, site.x, site.y, t, mScale, tq, lvl);
+          if (!wolfAway && !catAway && tw2 && tw2.flashT > 0) {
             // the bright flash the moment an upgrade lands
             ctx.fillStyle = 'rgba(255,240,190,' + (tw2.flashT / 0.55 * 0.55) + ')';
             circle(site.x, site.y - 16, 34); ctx.fill();
           }
-          if (!wolfAway) {
+          if (!wolfAway && !catAway) {
           // level stars above the head: one, two, three
           ctx.font = '800 11px "Baloo 2", sans-serif';
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -5332,6 +5605,10 @@
       var hopArc = (k.hop && walking) ? Math.abs(Math.sin(k.bob)) : 0;
       var walkBob = walking ? (k.hop ? -hopArc * 8.5 : -Math.abs(Math.sin(k.bob)) * 2.4) : 0;
       var x = k.x, y = k.y + jump + walkBob;
+      // carried back by a ghost Lv3 mini ghost: the kid floats
+      // up off the road while the little ghost holds them (the
+      // shadow below stays on the road, so the lift reads)
+      if (k.carryT > 0) y -= 14;
       // shadow
       ctx.fillStyle = 'rgba(12,6,30,.35)';
       ctx.beginPath(); ctx.ellipse(k.x, k.y + 3, 11 * s, 4, 0, 0, 6.3); ctx.fill();
@@ -5904,6 +6181,56 @@
       ctx.restore();
     }
 
+    /* ghost Lv3 mini ghost: a small white sheet ghost, same cut as
+       the big scream ghost, riding above the kid it carries */
+    function drawMiniGhost(x, y, t, mg) {
+      var wob = Math.sin(t * 7 + mg.seed) * 1.5;
+      ctx.save(); ctx.translate(x, y + wob);
+      ctx.fillStyle = 'rgba(246,242,255,.95)';
+      ctx.beginPath();
+      ctx.moveTo(-8, 4);
+      ctx.quadraticCurveTo(-9, -10, 0, -11);
+      ctx.quadraticCurveTo(9, -10, 8, 4);
+      ctx.lineTo(5.5, 1.5); ctx.lineTo(3, 4); ctx.lineTo(0, 1.5); ctx.lineTo(-3, 4); ctx.lineTo(-5.5, 1.5);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#241245';
+      circle(-3, -3.5, 1.3); ctx.fill();
+      circle(3, -3.5, 1.3); ctx.fill();
+      ctx.restore();
+    }
+
+    /* black cat Lv3 pounce: the cat itself, crouched over the kid
+       it pins — black body, pink inner ears, yellow eyes, tail
+       lashing; while it pins, white claw slashes flash over it */
+    function drawPounceCat(x, y, t, pinning) {
+      ctx.save(); ctx.translate(x, y);
+      ctx.fillStyle = 'rgba(12,6,30,.3)';
+      ctx.beginPath(); ctx.ellipse(0, 8, 11, 3.5, 0, 0, 6.3); ctx.fill();
+      ctx.strokeStyle = '#221636'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(9, 4); ctx.quadraticCurveTo(18, 2, 16, -6 + Math.sin(t * 9) * 2); ctx.stroke();
+      ctx.fillStyle = '#221636';
+      ctx.beginPath(); ctx.ellipse(0, 0, 10, 7, 0, 0, 6.3); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-6, -4); ctx.lineTo(-8, -12); ctx.lineTo(-2, -7); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(6, -4); ctx.lineTo(8, -12); ctx.lineTo(2, -7); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ff8fb5';
+      ctx.beginPath(); ctx.moveTo(-6, -5.5); ctx.lineTo(-7.2, -10); ctx.lineTo(-3.6, -6.8); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(6, -5.5); ctx.lineTo(7.2, -10); ctx.lineTo(3.6, -6.8); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffd23e';
+      circle(-3.5, -1.5, 1.6); ctx.fill();
+      circle(3.5, -1.5, 1.6); ctx.fill();
+      ctx.fillStyle = '#120a24';
+      circle(-3.5, -1.5, 0.7); ctx.fill();
+      circle(3.5, -1.5, 0.7); ctx.fill();
+      if (pinning) {
+        ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.6;
+        for (var sc = 0; sc < 3; sc++) {
+          var sy2 = -4 + sc * 3.5 + Math.sin(t * 12 + sc) * 1;
+          ctx.beginPath(); ctx.moveTo(-8, sy2); ctx.lineTo(8, sy2 - 2); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
     /* ---------- first-run tutorial bubble (canvas) ---------- */
     function drawTutorial(t) {
       var bob = Math.sin(t * 3) * 3;
@@ -6176,6 +6503,12 @@
         // darker sticky rim
         ctx.strokeStyle = 'rgba(46,140,32,.75)'; ctx.lineWidth = 2.2;
         ctx.beginPath(); ctx.ellipse(sz.x, sz.y, sr, sr * 0.52, 0, 0, 6.3); ctx.stroke();
+        // Lv3 acid pool: a hot yellow-green edge, so it never
+        // reads as the plain goo
+        if (sz.acid) {
+          ctx.strokeStyle = 'rgba(220,255,90,.9)'; ctx.lineWidth = 2.6;
+          ctx.beginPath(); ctx.ellipse(sz.x, sz.y, sr * 1.02, sr * 0.53, 0, 0, 6.3); ctx.stroke();
+        }
         // gloss highlights: the wet shine on top of the goo
         ctx.fillStyle = 'rgba(235,255,205,.5)';
         ctx.beginPath(); ctx.ellipse(sz.x - sr * 0.34, sz.y - sr * 0.16, sr * 0.2, sr * 0.07, -0.25, 0, 6.3); ctx.fill();
@@ -6227,6 +6560,12 @@
         circle(0, 0, vr * 0.62); ctx.fill();
         ctx.fillStyle = 'rgba(245,220,160,.28)';
         circle(0, 0, vr * 0.34); ctx.fill();
+        // a Lv3 sandstorm wears a golden outer ring, so it reads
+        // as the big one even before its size gives it away
+        if (vx.storm) {
+          ctx.strokeStyle = 'rgba(255,190,90,.8)'; ctx.lineWidth = 3;
+          circle(0, 0, vr); ctx.stroke();
+        }
         // the spiral itself: one more arm, thicker and brighter
         ctx.strokeStyle = 'rgba(222,182,110,.95)'; ctx.lineWidth = 4.5; ctx.lineCap = 'round';
         for (var vs = 0; vs < 4; vs++) {
@@ -6297,6 +6636,8 @@
       });
       // bat screech / werewolf howl rings rolling outward
       state.rings.forEach(function (rg) {
+        // a Lv3 bat's later rings wait their turn before showing
+        if (rg.delay > 0) return;
         var rfa = Math.max(0, 1 - rg.t / rg.life);
         ctx.save(); ctx.globalAlpha = rfa;
         ctx.strokeStyle = 'rgba(' + rg.color + ',.85)'; ctx.lineWidth = 3;
@@ -6320,8 +6661,33 @@
         });
         ctx.restore();
       });
+      // spider Lv3 net zones: a big net spread flat on the road,
+      // wider and bluer than a plain web splat
+      state.netZones.forEach(function (nz) {
+        var nfa = Math.min(1, nz.t / 0.2, (nz.dur - nz.t) / 0.4);
+        ctx.save(); ctx.globalAlpha = Math.max(0, nfa) * 0.85;
+        ctx.strokeStyle = '#cfe8ff'; ctx.lineWidth = 1.6;
+        for (var ni2 = 0; ni2 < 8; ni2++) {
+          var na2 = ni2 * Math.PI / 4;
+          ctx.beginPath(); ctx.moveTo(nz.x, nz.y);
+          ctx.lineTo(nz.x + Math.cos(na2) * nz.r, nz.y + Math.sin(na2) * nz.r * 0.45); ctx.stroke();
+        }
+        [0.4, 0.7, 1].forEach(function (fr) {
+          ctx.beginPath(); ctx.ellipse(nz.x, nz.y, nz.r * fr, nz.r * fr * 0.45, 0, 0, 6.3); ctx.stroke();
+        });
+        ctx.restore();
+      });
       // scarecrow crows, chasing and riding their kids
       state.crows.forEach(function (cr) { drawCrow(cr.x, cr.y, t, cr); });
+      // ghost Lv3 mini ghosts riding their kids back down the road
+      state.miniGhosts.forEach(function (mg) {
+        if (!mg.k) return;
+        drawMiniGhost(mg.k.x, mg.k.y - 34 + Math.sin(t * 6 + mg.seed) * 2, t, mg);
+      });
+      // a black cat out on its Lv3 pounce, riding the kid it pins
+      state.towers.forEach(function (tw) {
+        if (tw.kind === 'cat' && tw.pounce) drawPounceCat(tw.pounce.x, tw.pounce.y, t, tw.pounce.phase === 'pin');
+      });
       // the big scream ghost drifting back along the road
       state.ghosts.forEach(function (gh) {
         if (gh.x == null) return;
@@ -6432,18 +6798,18 @@
        the six of the current game's roster (see rosterKinds) and
        hides the rest — the panel itself never changes shape */
     var CARD_DEFS = [
-      { kind: 'franken', nm: 'Franken Tower', desc: 'Chain lightning · Stuns' },
-      { kind: 'ghost', nm: 'Ghost Tower', desc: 'Piercing lollipops' },
-      { kind: 'spider', nm: 'Spider Tower', desc: 'Web spray · Heavy slow' },
-      { kind: 'witch', nm: 'Witch Tower', desc: 'Poison mist potions' },
-      { kind: 'zombie', nm: 'Zombie Tower', desc: 'Thrown arm · Hits twice' },
-      { kind: 'mummy', nm: 'Mummy Tower', desc: 'Sand whirlwind · Slows + stings' },
-      { kind: 'bat', nm: 'Bat Tower', desc: 'Sonic ring · Hits all around' },
-      { kind: 'werewolf', nm: 'Werewolf Tower', desc: 'Howl speeds towers · Giant-wolf pounce' },
-      { kind: 'cat', nm: 'Black Cat Tower', desc: 'Rapid paw balls · Crits' },
-      { kind: 'skeleton', nm: 'Skeleton Tower', desc: 'Bone pile · Blocks the road' },
-      { kind: 'scarecrow', nm: 'Scarecrow Tower', desc: 'Pet crow · Pecks one kid' },
-      { kind: 'slime', nm: 'Slime Tower', desc: 'Goo puddle · Slows + melts armor' }
+      { kind: 'franken', nm: 'Franken Tower', desc: 'Chain lightning · Lv3 triple storm' },
+      { kind: 'ghost', nm: 'Ghost Tower', desc: 'Piercing lollipops · Lv3 ghost carriers' },
+      { kind: 'spider', nm: 'Spider Tower', desc: 'Web spray · Lv3 giant net' },
+      { kind: 'witch', nm: 'Witch Tower', desc: 'Poison mist · Lv3 plague bursts' },
+      { kind: 'zombie', nm: 'Zombie Tower', desc: 'Thrown arm · Lv3 two arms' },
+      { kind: 'mummy', nm: 'Mummy Tower', desc: 'Sand whirlwind · Lv3 sandstorm' },
+      { kind: 'bat', nm: 'Bat Tower', desc: 'Sonic ring · Lv3 triple storm' },
+      { kind: 'werewolf', nm: 'Werewolf Tower', desc: 'Howl speeds towers · Lv3 giant-wolf pounce' },
+      { kind: 'cat', nm: 'Black Cat Tower', desc: 'Rapid paw balls · Lv3 pounce pin' },
+      { kind: 'skeleton', nm: 'Skeleton Tower', desc: 'Bone pile · Lv3 bone wall' },
+      { kind: 'scarecrow', nm: 'Scarecrow Tower', desc: 'Pet crow · Lv3 crow flock' },
+      { kind: 'slime', nm: 'Slime Tower', desc: 'Goo puddle · Lv3 acid pool' }
     ];
     var miniSVG = {
       franken: '<svg viewBox="0 0 48 48"><rect x="13" y="33" width="22" height="11" rx="3" fill="#2c303a"/><rect x="5" y="19" width="5" height="4" rx="1" fill="#9aa3b2"/><rect x="38" y="19" width="5" height="4" rx="1" fill="#9aa3b2"/><rect x="11" y="5" width="26" height="27" rx="4" fill="#79c25e"/><path d="M11 5 H37 V12 L31 10 L25 12 L19 10 L13 12 L11 11 Z" fill="#191c22"/><path d="M16 18.5 H31 M19 16.8 V20 M24 16.8 V20 M28.5 16.8 V20" stroke="#2e4d24" stroke-width="1.5" fill="none"/><circle cx="19" cy="23.5" r="2.1" fill="#1c2416"/><circle cx="29" cy="23.5" r="2.1" fill="#1c2416"/><path d="M19.5 28.5 H28.5 M22.5 27.2 V29.8 M26 27.2 V29.8" stroke="#2e4d24" stroke-width="1.5" fill="none"/></svg>',
