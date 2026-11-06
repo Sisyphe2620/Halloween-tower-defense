@@ -1359,15 +1359,22 @@
         .dracula-bubble { animation: none; opacity: 1; transform: none; }
         .dracula-bubble .w { animation: none; opacity: 1; }
       }
-      /* ---------- pre-splash: a brief title card shown BEFORE the
-         start page. One tap anywhere dismisses it — and because that
-         tap is a real user gesture, it unlocks the browser's audio,
-         so the splash page's skeleton-dance music starts by itself
-         the moment the start page appears ---------- */
+      /* ---------- pre-splash tap page (restored 2026-11-06): a brief
+         title card shown after the loading screen and BEFORE the
+         mode poster. One tap anywhere enters the game straight to
+         the mode poster (no start page) — and because that tap is a
+         real user gesture, it unlocks the browser's audio, so the
+         skeleton-dance music starts on the tap and plays through
+         the mode poster. z-index 65 sits above the mode poster
+         (60) so the card fades out over it, and below the loading
+         screen (70) so the bar still covers it while loading. The
+         :not(.gone) rule makes showing fade in: the base transition
+         delays visibility .35s, which is right for hiding but
+         would pop on showing. ---------- */
       .presplash {
         position: fixed;
         inset: 0;
-        z-index: 60;
+        z-index: 65;
         overflow: hidden;
         display: flex;
         align-items: center;
@@ -1379,6 +1386,7 @@
         transition: opacity .35s ease, visibility 0s linear .35s;
       }
       .presplash.gone { opacity: 0; visibility: hidden; }
+      .presplash:not(.gone) { transition: opacity .35s ease, visibility 0s linear 0s; }
       .pre-inner { text-align: center; padding: 20px; }
       .pre-moon {
         width: 64px;
@@ -1434,6 +1442,7 @@
         .pre-title { animation: none; transform: rotate(-2deg); }
         .pre-hint { animation: none; opacity: .85; }
         .presplash { transition: none; }
+        .presplash:not(.gone) { transition: none; }
       }
       /* ---------- boot loading screen: shown the moment the page
          paints, in place of a bare spinner. The bar is driven ONLY
@@ -1537,7 +1546,8 @@
          full poster +20%, game code +30%, game font +20%, engine
          initialised +20%) and the number only ever advances when
          one of those events actually fires. When it reaches 100%
-         the screen fades and the mode poster takes over -->
+         the screen fades and the tap page appears — one tap there
+         takes the player straight to the mode poster -->
     <div class="bootload" id="bootload" role="status" aria-label="Loading the game">
       <div class="boot-inner">
         <div class="boot-moon" aria-hidden="true"></div>
@@ -1592,13 +1602,16 @@
             render();
             setTimeout(function () {
               box.classList.add('gone'); gone = true;
-              /* no start page any more: entering the game is
-                 automatic — the mode poster is the first thing the
-                 player sees. If the engine is already booted,
-                 __tdEnter runs at once; if it is still on its way,
-                 the pending flag is honoured the moment it boots. */
-              if (window.__tdEnter) window.__tdEnter();
-              else window.__tdPendingEnter = true;
+              /* the tap page comes next — not the mode poster yet:
+                 the player taps anywhere on it, and that tap is
+                 the gesture that unlocks audio and enters the
+                 game (straight to the mode poster; the START page
+                 stays retired). Entry is driven by the tap, never
+                 from here — if the engine is still on its way
+                 when the tap lands, the tap remembers itself via
+                 the pending flag and retries the load. */
+              var pre = document.getElementById('presplash');
+              if (pre) pre.classList.remove('gone');
             }, 380);
           }
           requestAnimationFrame(tick);
@@ -1619,10 +1632,56 @@
         }, 9000);
       })();
     </script>
-    <!-- pre-splash: a brief title card before the start page. The
-         player's tap anywhere on it is the gesture that unlocks
-         audio, so the start page's music begins on its own the
-         moment this card fades away -->
+    <!-- presplash tap page (restored 2026-11-06): after the loading
+         screen, one tap anywhere here enters the game — straight to
+         the mode poster, no START page — and that tap is the gesture
+         that unlocks audio, so the skeleton-dance music starts and
+         plays through the mode poster. It starts hidden and is shown
+         by the boot-progress script when loading finishes. -->
+    <div class="presplash gone" id="presplash" role="button" tabindex="0" aria-label="Tap anywhere to continue">
+      <div class="pre-inner">
+        <div class="pre-moon" aria-hidden="true"></div>
+        <h1 class="pre-title"><span class="l1">TRICK OR</span><span class="l2">TREATERS!</span></h1>
+        <p class="pre-hint" id="preHint">TAP ANYWHERE TO CONTINUE</p>
+      </div>
+    </div>
+    <script>
+      /* presplash tap wiring — self-contained (no engine needed):
+         the tap is the audio-unlock gesture, so it starts the
+         skeleton-dance music at once (and wakes it if a screen-off
+         parked it); then it enters the game. If the engine is
+         booted, __tdEnter runs and the mode poster opens. If the
+         engine is still on its way, the tap is remembered via
+         __tdPendingEnter (honoured by __tdBoot the moment it
+         lands) and the load is retried now — the card stays up
+         with a loading hint, so the player always has a working
+         retry path even when the engine never arrives. */
+      (function () {
+        var pre = document.getElementById('presplash');
+        var hint = document.getElementById('preHint');
+        if (!pre) return;
+        var entered = false;
+        function engineReady() { return typeof window.__tdEnter === 'function'; }
+        function onTap() {
+          if (entered) return;
+          if (window.__tdStartSplashMusic) window.__tdStartSplashMusic();
+          if (window.__tdResumeSplashMusic) window.__tdResumeSplashMusic();
+          if (engineReady()) {
+            entered = true;
+            pre.classList.add('gone');
+            window.__tdEnter();
+            return;
+          }
+          window.__tdPendingEnter = true;
+          if (hint) hint.textContent = 'LOADING\u2026 TAP AGAIN TO RETRY';
+          if (window.__tdRetryEngine) window.__tdRetryEngine();
+        }
+        pre.addEventListener('click', onTap);
+        pre.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onTap(); }
+        });
+      })();
+    </script>
     <!-- start page RETIRED 2026-11-06: after the loading screen the game goes straight to the mode poster — no splash page, no START click. The markup stays (starting hidden): the cover img still loads, driving the boot art stages, and the visitor badge still counts; the bootstrap scripts below still find their elements. -->
     <div class="splash gone" id="splash">
       <div class="splash-inner">
@@ -1756,10 +1815,17 @@
         }
         window.__tdStartSplashMusic = start;
         window.__tdStopSplashMusic = stop;
-        /* no start page any more (retired 2026-11-06), so the dance
-           never auto-starts and no gesture wakes it: the mode poster
-           is silent until a mode is picked and the game music takes
-           over. start/stop stay defined for the engine hand-off. */
+        /* resume hook for the presplash tap: if a screen-off parked
+           the context while the dance was playing, the next tap
+           wakes it (start() alone would no-op — its timer is
+           already set). recover is hoisted within this scope. */
+        window.__tdResumeSplashMusic = recover;
+        /* the dance no longer auto-starts (the start page retired
+           2026-11-06): the presplash tap starts it — that tap is
+           the audio-unlock gesture — and it plays through the mode
+           poster until a mode is picked, when startGame() stops it
+           and the game music takes over. start/stop stay defined
+           for the engine hand-off. */
         /* ---------- screen-off recovery for THIS page's music ----------
            Same failure as the game's audio, same cure: when the
            phone screen turns off, the browser parks this context
@@ -1794,9 +1860,12 @@
           } catch (e) {}
         }
         function recover() {
-          if (stopped) return; // START was tapped: the dance is over for good
-          var sp = document.getElementById('splash');
-          if (!sp || sp.classList.contains('gone')) return;
+          if (stopped) return; // a mode was picked: the dance is over for good
+          if (!timer) return; // never started (no presplash tap yet): nothing to recover — and never start without a gesture
+          /* the dance now lives on the mode poster (the start page
+             is retired, so the splash is always gone): the old
+             splash-visibility gate would have bailed out here
+             every time, so it is gone too. */
           if (!ac) { start(); return; }
           if (ac.state === 'running') { splFinish(); return; }
           // Parked: 'suspended' on Android, 'interrupted' on iOS.
@@ -2148,9 +2217,9 @@
          and is fetched in the background only AFTER the first paint
          — so the loading screen appears almost immediately instead
          of waiting for the whole engine to download first. The
-         engine's entry (__tdEnter) fires automatically when the
-         boot finishes; if a load is still in flight then, the
-         pending flag is honoured the moment it boots. */
+         engine's entry (__tdEnter) fires when the player taps the
+         presplash tap page; if the tap landed before the engine
+         arrived, the pending flag is honoured the moment it boots. */
       (function () {
         var kicked = false;
         var attempts = 0;
