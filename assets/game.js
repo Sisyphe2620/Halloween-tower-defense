@@ -7662,13 +7662,16 @@
     }
     requestAnimationFrame(loop);
 
-    /* entry point after the loading screen: the start page is
-       retired, so this fires automatically when the boot finishes
-       (the boot-progress script calls it, or sets the pending flag
-       below if the engine arrived late) — it drops straight into
-       the mode poster. */
+    /* entry point: the presplash tap calls this (or the pending
+       flag below fires it if the tap landed before the engine
+       arrived) — it drops straight into the mode poster. The
+       start page is retired, so there is no splash page to hide;
+       the tap page (if it is up) goes away here too, so entry
+       from any path leaves the player on the mode poster. */
     window.__tdEnter = function () {
       document.getElementById('splash').classList.add('gone');
+      var pre = document.getElementById('presplash');
+      if (pre) pre.classList.add('gone');
       startGame();
     };
     if (window.__tdPendingEnter) {
@@ -7681,8 +7684,9 @@
     if (window.__tdEngineReady) window.__tdEngineReady();
     };
     /* boot after first paint: idle callback if available, with plain
-       timers and the load event as backstops, so the splash cover is
-       on screen (and tappable) while this runs behind it */
+       timers and the load event as backstops, so the loading screen
+       is on screen while this runs behind it — the tap page is
+       what becomes tappable once loading finishes */
     (function scheduleBoot() {
       var done = false;
       function go() { if (done) return; done = true; window.__tdBoot(); }
