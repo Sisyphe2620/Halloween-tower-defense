@@ -78,6 +78,17 @@
         align-items: center;
         justify-content: center;
       }
+      /* the game board stays hidden until the player has picked a
+         mode and the game genuinely starts (startGame() in game.js
+         adds .in-game to <body>): the loading screen, the tap page
+         and the mode poster are all opaque overlays, but each of
+         them fades — and mid-fade the layer below peeks through.
+         With the board hidden there is nothing to flash: only the
+         page's own dark background can ever show. visibility (not
+         display) keeps the stage laid out, so the engine's boot
+         measurements still work; the top bar is NOT hidden here,
+         so the engine watchdog's RETRY button stays reachable. */
+      body:not(.in-game) .stagebox { visibility: hidden; }
       /* ---------- control bar ---------- */
       .controls {
         display: flex;
@@ -1211,17 +1222,26 @@
          from nothing at its tail by his head, then the words fade in
          one by one; afterwards it bobs very gently. The left/top/
          width below are image fractions (the fallback before JS
-         measures the displayed rect): top 20.5% clears the painted
-         title, which ends around 19%, and the bubble sits above the
-         gold plaque, its tail pointing down-right at Dracula.
-         layoutModeOverlay() overrides these with pixels from the
-         displayed image rect, so the bubble stays put on every
-         screen ratio. ---------- */
+         measures the displayed rect), measured on the art itself:
+         title ends ~19.7%, Dracula's head x 37.8–59.8% y 23.3–33.6%
+         (face 39.5–60.0% x 26.5–33.5%), Frankenstein's head starts
+         at 32.0% — so the bubble is narrow (35% wide, left 2%,
+         top 20.5%): it sits left of Dracula's head and above
+         Frankenstein's, clear of the title and the gold plaque
+         (starts 51%), its tail (tip ~92.5% of its width) pointing
+         down at Dracula from just left of his hair. The old 58%
+         bubble covered his face. layoutModeOverlay() overrides
+         these with pixels from the displayed image rect, so the
+         bubble stays put on every screen ratio — and on tall
+         screens, where the poster's sides are cropped, it caps
+         the bubble's right edge at image x 37% (shrinking the
+         bubble and its font) so the left-edge clamp can never
+         shove it over Dracula's head. ---------- */
       .dracula-bubble {
         position: absolute;
-        left: 3%;
+        left: 2%;
         top: 20.5%;
-        width: 58%;
+        width: 35%;
         max-width: 290px;
         z-index: 3;
         /* NO background or border of its own any more: the visible
@@ -1239,10 +1259,10 @@
         padding: 9px 12px 10px;
         font-family: "Baloo 2", sans-serif;
         font-weight: 700;
-        font-size: clamp(12px, 3.4vw, 15px);
+        font-size: clamp(11.5px, 3.2vw, 14px);
         line-height: 1.35;
         box-shadow: 0 8px 20px rgba(10, 4, 30, .45);
-        transform-origin: 80% 100%;
+        transform-origin: 92% 100%;
         /* pre-appearance state: fully shrunk and invisible, so the
            bubble is genuinely absent until the page has loaded and
            the .show class starts the pop from nothing */
@@ -1259,8 +1279,10 @@
          strip below it where the tail tip lives. Its single path
          (see the markup) outlines the rounded rectangle, diverts
          down around the tail triangle where the tail joins the
-         bottom edge — same spot as the old tail, tip centred at
-         ~77% of the width, ~13px below the bubble — and continues
+         bottom edge — tip centred at ~92.5% of the width, ~13px
+         below the bubble, so it points down at Dracula from the
+         bubble's right end (the old tail sat at ~77% and the wide
+         bubble covered his face) — and continues
          along the rest of the bottom edge. Because the stroke is
          one continuous outline, the join has no horizontal line
          to hide: nothing is patched or covered. vector-effect
@@ -1367,7 +1389,11 @@
          skeleton-dance music starts on the tap and plays through
          the mode poster. z-index 65 sits above the mode poster
          (60) so the card fades out over it, and below the loading
-         screen (70) so the bar still covers it while loading. The
+         screen (70) so the bar still covers it while loading. It
+         starts OPAQUE behind the loading screen (no .gone at first
+         paint), so the loading fade reveals it already solid and
+         the game stage can never flash through the cross-over;
+         the boot script still removes .gone as a safeguard. The
          :not(.gone) rule makes showing fade in: the base transition
          delays visibility .35s, which is right for hiding but
          would pop on showing. ---------- */
@@ -1602,14 +1628,17 @@
             render();
             setTimeout(function () {
               box.classList.add('gone'); gone = true;
-              /* the tap page comes next — not the mode poster yet:
-                 the player taps anywhere on it, and that tap is
-                 the gesture that unlocks audio and enters the
-                 game (straight to the mode poster; the START page
-                 stays retired). Entry is driven by the tap, never
-                 from here — if the engine is still on its way
-                 when the tap lands, the tap remembers itself via
-                 the pending flag and retries the load. */
+              /* the tap page is already up behind this screen —
+                 opaque from first paint — so the fade reveals it
+                 solid, never the stage. The remove below is only
+                 a safeguard (the card starts without .gone). The
+                 player taps anywhere on it, and that tap is the
+                 gesture that unlocks audio and enters the game
+                 (straight to the mode poster; the START page stays
+                 retired). Entry is driven by the tap, never from
+                 here — if the engine is still on its way when the
+                 tap lands, the tap remembers itself via the
+                 pending flag and retries the load. */
               var pre = document.getElementById('presplash');
               if (pre) pre.classList.remove('gone');
             }, 380);
@@ -1636,9 +1665,11 @@
          screen, one tap anywhere here enters the game — straight to
          the mode poster, no START page — and that tap is the gesture
          that unlocks audio, so the skeleton-dance music starts and
-         plays through the mode poster. It starts hidden and is shown
-         by the boot-progress script when loading finishes. -->
-    <div class="presplash gone" id="presplash" role="button" tabindex="0" aria-label="Tap anywhere to continue">
+         plays through the mode poster. It starts OPAQUE behind the
+         loading screen (no .gone): the loading fade reveals it
+         already solid, so the game stage can never flash through
+         while the screens cross over. -->
+    <div class="presplash" id="presplash" role="button" tabindex="0" aria-label="Tap anywhere to continue">
       <div class="pre-inner">
         <div class="pre-moon" aria-hidden="true"></div>
         <h1 class="pre-title"><span class="l1">TRICK OR</span><span class="l2">TREATERS!</span></h1>
@@ -2155,7 +2186,7 @@
     <div class="choice modechoice" id="modeChoice" aria-hidden="true">
       <div class="mode-poster">
         <img src="assets/mode-select.webp" width="940" height="1673" decoding="async" alt="Trick or Defend! Choose your mode" />
-        <div class="dracula-bubble" role="note" aria-label="Count Dracula says: I despise those pesky trick-or-treaters! Minions, keep them away from my castle!"><svg class="bubble-shape" viewBox="0 0 300 118" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M 17 2 H 283 Q 298 2 298 17 V 87 Q 298 102 283 102 H 244 L 233.5 113.5 Q 232 116.2 230.5 113.5 L 220 102 H 17 Q 2 102 2 87 V 17 Q 2 2 17 2 Z" fill="rgba(255, 246, 224, .78)" stroke="#2b1050" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg><span class="w" style="--d:.55s">I</span> <span class="w" style="--d:.62s">despise</span> <span class="w" style="--d:.69s">those</span> <span class="w" style="--d:.76s">pesky</span> <span class="w" style="--d:.83s">trick-or-treaters!</span> <span class="w" style="--d:.97s">Minions,</span> <span class="w" style="--d:1.04s">keep</span> <span class="w" style="--d:1.11s">them</span> <span class="w" style="--d:1.18s">away</span> <span class="w" style="--d:1.25s">from</span> <span class="w" style="--d:1.32s">my</span> <span class="w" style="--d:1.39s">castle!</span></div>
+        <div class="dracula-bubble" role="note" aria-label="Count Dracula says: I despise those pesky trick-or-treaters! Minions, keep them away from my castle!"><svg class="bubble-shape" viewBox="0 0 300 118" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M 17 2 H 283 Q 298 2 298 17 V 87 Q 298 102 283 102 H 289 L 279 113.5 Q 277.5 116.2 276 113.5 L 255 102 H 17 Q 2 102 2 87 V 17 Q 2 2 17 2 Z" fill="rgba(255, 246, 224, .78)" stroke="#2b1050" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg><span class="w" style="--d:.55s">I</span> <span class="w" style="--d:.62s">despise</span> <span class="w" style="--d:.69s">those</span> <span class="w" style="--d:.76s">pesky</span> <span class="w" style="--d:.83s">trick-or-treaters!</span> <span class="w" style="--d:.97s">Minions,</span> <span class="w" style="--d:1.04s">keep</span> <span class="w" style="--d:1.11s">them</span> <span class="w" style="--d:1.18s">away</span> <span class="w" style="--d:1.25s">from</span> <span class="w" style="--d:1.32s">my</span> <span class="w" style="--d:1.39s">castle!</span></div>
         <button class="mode-hot mode-hot-challenge" id="btnModeChallenge" type="button" aria-label="闯关模式：10 waves, hold the castle, then victory"><span class="mode-hot-t">闯关模式</span><span class="mode-hot-s">10 waves — hold the castle, then victory!</span></button>
         <button class="mode-hot mode-hot-endless" id="btnModeEndless" type="button" aria-label="无限流模式：endless waves, how long can you last"><span class="mode-hot-t">无限流模式</span><span class="mode-hot-s">Endless waves — how long can you last?</span></button>
       </div>
