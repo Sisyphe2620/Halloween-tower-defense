@@ -1,0 +1,2254 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:," />
+    <title>Trick or Defend!</title>
+    <!-- NO webfont on the start page's load path: the splash renders
+         in system type immediately, and the game font (Baloo 2) is
+         fetched only once the player taps START and enters the game
+         (see __tdLoadGameFont in the splash bootstrap below) -->
+    <!-- the only image preloaded for the splash is the tiny low-res
+         WebP placeholder (a few KB): it paints almost instantly while
+         the full-resolution WebP cover swaps in behind it -->
+    <link rel="preload" as="image" href="assets/splash-cover-2-low.webp" fetchpriority="high" />
+    <style>
+      :root {
+        --bg: #17102e;
+        --bg-soft: #221845;
+        --panel: #2a1c55;
+        --panel-line: #4b3585;
+        --ink: #f4efff;
+        --ink-dim: #b9aede;
+        --accent: #ff9f2e;
+        --accent-2: #ff5d8f;
+        --good: #7ee06f;
+        --chip: #1d1442;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #241a4d;
+          --bg-soft: #2d2160;
+          --panel: #33256b;
+          --panel-line: #58499b;
+          --ink: #f7f3ff;
+          --ink-dim: #c9bdf2;
+          --chip: #251a52;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background:
+          radial-gradient(120% 60% at 50% -10%, var(--bg-soft) 0%, var(--bg) 60%);
+        color: var(--ink);
+        /* system type first: the display font is not loaded until the
+           player enters the game, then body.fonts-in swaps it in */
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        min-height: 100vh;
+        -webkit-font-smoothing: antialiased;
+      }
+      /* added by the font loader once Baloo 2 has arrived (on entering
+         the game): the whole page swaps from system type to the game
+         font; elements that name "Baloo 2" in their own stack swap
+         automatically at the same moment */
+      body.fonts-in { font-family: "Baloo 2", system-ui, sans-serif; }
+      .wrap {
+        max-width: 500px;
+        margin: 0 auto;
+        padding: 0 12px 28px;
+      }
+      /* first screen: every control + the game itself fits without scrolling;
+         the how-to text lives below this container */
+      .screen {
+        height: 100vh;
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-top: 10px;
+      }
+      .stagebox {
+        flex: 1 1 auto;
+        min-height: 0;
+        container-type: size;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* ---------- control bar ---------- */
+      .controls {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 5px;
+        align-items: center;
+        margin-bottom: 0;
+      }
+      /* top bar only: slightly tighter horizontal padding and
+         icon gap so all four buttons (Pause/Resume, Restart,
+         Sound, Speed) stay on ONE row in both the paused and
+         unpaused states — font size, height, radius and colours
+         are unchanged */
+      .controls .btn {
+        padding: 10px 9px;
+        gap: 4px;
+        white-space: nowrap;
+        flex: none;
+      }
+      .controls .spacer { min-width: 0; }
+      .btn {
+        appearance: none;
+        border: 2px solid var(--panel-line);
+        background: var(--panel);
+        color: var(--ink);
+        font-family: inherit;
+        font-weight: 700;
+        font-size: 14px;
+        line-height: 1;
+        padding: 10px 14px;
+        border-radius: 999px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: transform .08s ease, background .15s ease, border-color .15s ease;
+        touch-action: manipulation;
+        user-select: none;
+      }
+      .btn:active { transform: scale(.96); }
+      .btn.primary {
+        background: linear-gradient(180deg, #ffb03a, #ff8a1e);
+        border-color: #ffc46b;
+        color: #3a1c00;
+        box-shadow: 0 4px 14px rgba(255, 150, 40, .35);
+      }
+      .btn.on { border-color: var(--accent); color: var(--accent); }
+      .btn.armed { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 14px rgba(255,159,46,.45); }
+      .btn:disabled { opacity: .5; cursor: default; }
+      .btn svg { width: 15px; height: 15px; flex: none; }
+      .spacer { flex: 1; }
+      /* ---------- speed button attention cue: the button itself is
+         untouched (same shape, size, colours and label) — only a
+         soft halo of light breathes around it so the eye can find
+         it: a permanent, very slow, low-intensity breathing glow,
+         plus a slightly stronger triple blink the FIRST time the
+         player enters the game (the .speed-intro class, added once
+         by the tiny script just after the control bar) ---------- */
+      #btnSpeed { animation: speedBreathe 3.4s ease-in-out infinite; }
+      @keyframes speedBreathe {
+        0%, 100% { box-shadow: 0 0 6px 1px rgba(88, 209, 61, .35); }
+        50% { box-shadow: 0 0 20px 6px rgba(88, 209, 61, .65); }
+      }
+      #btnSpeed.speed-intro { animation: speedIntro .55s ease-in-out 3; }
+      @keyframes speedIntro {
+        0%, 100% { box-shadow: 0 0 6px rgba(88, 209, 61, .3); }
+        50% { box-shadow: 0 0 26px 8px rgba(88, 209, 61, .85); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #btnSpeed { animation: none; box-shadow: 0 0 14px 3px rgba(88, 209, 61, .55); }
+        #btnSpeed.speed-intro { animation: none; }
+      }
+      /* ---------- special-skill buttons: they live ON the game stage in a
+         small translucent dock (bottom centre), so they stop eating a whole
+         row of screen height; still outlined + glowing so a first-time
+         player cannot miss that these are tappable skills ---------- */
+      .skilldock {
+        position: absolute;
+        left: 50%;
+        bottom: 7px;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+        z-index: 3;
+      }
+      .btn.skill {
+        flex-direction: column;
+        gap: 2px;
+        min-width: 57px;
+        border-color: var(--accent);
+        border-width: 2px;
+        background: rgba(38, 25, 84, .86);
+        font-size: 10.5px;
+        padding: 5px 8px 4px;
+        border-radius: 13px;
+      }
+      .btn.skill svg { width: 21px; height: 21px; }
+      .btn.skill.ready { animation: skillPulse 1.5s ease-in-out infinite; }
+      @keyframes skillPulse {
+        0%, 100% { box-shadow: 0 0 4px rgba(255, 159, 46, .25); }
+        50% { box-shadow: 0 0 18px 5px rgba(255, 159, 46, .65); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .btn.skill.ready { animation: none; box-shadow: 0 0 12px rgba(255, 159, 46, .55); }
+      }
+      /* one-skill-at-a-time coach tip: pops up only when the road
+         is crowded, teaching ONE skill, then goes away. It now sits
+         at the BOTTOM of the stage, just above the skill-button
+         dock, drawn as a speech bubble: the rounded rectangle and
+         the triangular tail below it are ONE continuous SVG
+         outline (see .skilltip-shape and drawSkillTipShape in
+         game.js), whose tail tip is placed directly over the
+         centre of the skill button the tip is teaching — no seam
+         line crosses the tail join, and nothing patches over it.
+         The fill is deliberately translucent (see the path fill in
+         the markup / game.js) so the game shows through a little
+         behind the bubble, while the text itself stays fully
+         opaque and readable. The tail occupies the bottom 14px of
+         this box (the extra bottom padding), and game.js sets the
+         exact `bottom` so the tip always clears the dock */
+      .skilltip {
+        position: absolute;
+        bottom: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: max-content;
+        max-width: 92%;
+        z-index: 4;
+        display: flex;
+        gap: 9px;
+        align-items: center;
+        background: none;
+        border: none;
+        padding: 8px 9px 22px 14px;
+        font-size: 12.5px;
+        line-height: 1.4;
+        color: var(--ink);
+        animation: skillTipIn .28s cubic-bezier(.2, 1.6, .4, 1) both;
+      }
+      /* the bubble + tail as ONE drawn shape: an inline SVG fills
+         this box (including the 14px tail strip at the bottom) and
+         its single path is (re)drawn by game.js for the bubble's
+         real size and the target button's centre. The drop-shadow
+         follows that outline, so the shadow is bubble-shaped too */
+      .skilltip .skilltip-shape {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+        pointer-events: none;
+        filter: drop-shadow(0 10px 16px rgba(0, 0, 0, .45));
+      }
+      /* words and the Got it button paint above the SVG fill */
+      .skilltip > span, .skilltip > button { position: relative; z-index: 1; }
+      @keyframes skillTipIn {
+        from { opacity: 0; transform: translateX(-50%) translateY(8px) scale(.92); }
+        to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+      }
+      .skilltip[hidden] { display: none; }
+      .skilltip b { color: #ffd23e; }
+      /* the skill button a tip is pointing at pulses harder so the
+         player's eye lands on exactly what to tap */
+      .btn.skill.tipglow {
+        border-color: #ffd23e;
+        animation: skillTipGlow .7s ease-in-out infinite;
+      }
+      @keyframes skillTipGlow {
+        0%, 100% { box-shadow: 0 0 6px rgba(255, 210, 62, .5); }
+        50% { box-shadow: 0 0 22px 8px rgba(255, 210, 62, .85); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .skilltip { animation: none; }
+        .btn.skill.tipglow { animation: none; box-shadow: 0 0 16px rgba(255, 210, 62, .8); }
+      }
+      /* defender-win banner: same floating style as KIDS WIN */
+      .defbanner .t1 { color: #7ee06f; }
+      /* ---------- CASTLE SAVED now shows NO text at all: the
+         monsters' celebration group photo (a transparent cut-out)
+         pops in at centre stage, about 75% of the stage wide,
+         straight over the game itself — no panel, no overlay — and
+         then simply stays there. The photo itself ships as a small
+         WebP (assets/victory-group.webp, ~170 KB) with the original
+         1.5 MB PNG kept as its fallback: the bare PNG was the one
+         asset on the page with no fallback chain, and a single
+         stalled fetch of it at page-load time left the victory
+         screen with no photo at all — the <img> now falls back
+         WebP → PNG → one cache-busted WebP retry (same pattern as
+         the splash cover), and the repair script at the bottom of
+         the page re-checks the photo the moment this banner shows
+         and re-fetches it if the first load failed ---------- */
+      .winbanner.defbanner { width: 75%; }
+      /* ---------- CASTLE SAVED backdrop dim: a deep purple-black
+         veil that sits BETWEEN the game canvas and the monsters'
+         group photo, so only the game behind them darkens (about
+         half) while the photo itself keeps its full brightness
+         and pops forward. Shown/hidden with the photo itself
+         (game.js toggles .show on #defDim alongside #defBanner) */
+      .defdim {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background: rgba(17, 8, 36, .5);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .35s ease;
+      }
+      .defdim.show { opacity: 1; }
+      /* ---------- CASTLE SAVED candy fireworks: a transparent
+         overlay canvas ABOVE the group photo (bursts start at the
+         photo's edges and radiate outward over it), driven by
+         game.js with the game's own candy-particle drawing.
+         Pointer-events none: it never blocks a tap ---------- */
+      .winfx {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 5;
+        pointer-events: none;
+      }
+      .defgroup {
+        display: block;
+        width: 100%;
+        height: auto;
+        filter: drop-shadow(0 14px 22px rgba(0, 0, 0, .5));
+        transform-origin: 50% 60%;
+      }
+      .defbanner.show .defgroup {
+        animation: bubblePop .45s cubic-bezier(.34, 1.56, .64, 1) .1s both;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .defbanner.show .defgroup { animation: none; }
+      }
+      /* ---------- CASTLE SAVED "PLAY AGAIN" button: centred just
+         below the monsters' group photo (the photo spans roughly
+         14%–54% of the stage height, so the button sits at 56.5%),
+         stacked ABOVE the dim veil (z 1) and the fireworks canvas
+         (z 5) so it is always tappable, in the game's own primary
+         orange with the same breathing glow as the START button.
+         Shown/hidden with the photo itself — game.js toggles .show
+         on #btnPlayAgain alongside #defBanner / #defDim ---------- */
+      .playagain {
+        position: absolute;
+        left: 50%;
+        top: 56.5%;
+        transform: translateX(-50%) scale(.6);
+        z-index: 6;
+        font-family: "Baloo 2", sans-serif;
+        font-size: 17px;
+        font-weight: 800;
+        letter-spacing: .14em;
+        padding: 12px 28px 12px calc(28px + .14em);
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .25s ease, transform .25s cubic-bezier(.2, 1.6, .4, 1);
+      }
+      .playagain.show {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateX(-50%) scale(1);
+        animation: startPulse 1.6s ease-in-out .3s infinite;
+      }
+      .playagain:active { transform: translateX(-50%) scale(.95); }
+      @media (prefers-reduced-motion: reduce) {
+        .playagain.show { animation: none; box-shadow: 0 6px 18px rgba(255, 150, 40, .5), 0 0 16px rgba(255, 176, 58, .6); }
+      }
+      /* ---------- Dracula's victory cameo, living ONLY inside the
+         CASTLE SAVED banner (KIDS WIN never shows him): a cute bust
+         of the Count pops in under the title, gently bobbing, with
+         a speech bubble beside his head delivering one smug,
+         tsundere line word by word. The bubble is ONE continuous
+         SVG outline — rounded rectangle and triangular tail drawn
+         as a single path, the same construction as his start-page
+         bubble — so there is no seam line where the tail joins and
+         nothing patches over anything. ---------- */
+      .defscene {
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        margin-top: 2px;
+      }
+      .defdrac {
+        width: 106px;
+        height: auto;
+        flex: none;
+        filter: drop-shadow(0 7px 12px rgba(0, 0, 0, .45));
+        transform-origin: 50% 100%;
+      }
+      .defbanner.show .defdrac {
+        animation:
+          bubblePop .45s cubic-bezier(.34, 1.56, .64, 1) .1s both,
+          bubbleBob 3.6s ease-in-out 1.1s infinite;
+      }
+      .defbubble {
+        position: relative;
+        margin: 0 0 36px -4px;
+        max-width: 234px;
+        padding: 9px 13px 10px;
+        color: #2b1050;
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 700;
+        font-size: 14px;
+        line-height: 1.38;
+        text-align: left;
+        -webkit-backdrop-filter: blur(3px);
+        backdrop-filter: blur(3px);
+        box-shadow: 0 8px 20px rgba(10, 4, 30, .45);
+        transform-origin: 12% 100%;
+      }
+      .defbanner.show .defbubble {
+        animation: bubblePop .5s cubic-bezier(.34, 1.56, .64, 1) .3s both;
+      }
+      /* the bubble + tail as ONE drawn shape, behind the words;
+         the extra height below the box is where the tail tip lives */
+      .defbubble .bubble-shape {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: calc(100% + 15px);
+        overflow: visible;
+        pointer-events: none;
+      }
+      .defbubble .w { position: relative; z-index: 1; display: inline-block; opacity: 0; }
+      .defbanner.show .defbubble .w {
+        animation: wordIn .28s ease-out both;
+        animation-delay: var(--d, 0s);
+      }
+      /* the line's two voices, then the laugh: line 1 is fake
+         sympathy — smaller, softer purple, each word sighing in
+         slowly from above; line 2 drops the act — suddenly much
+         bigger and heavier, every word punched out fast and hard;
+         HAHAHA! is the biggest thing in the bubble, blood-red,
+         bursting in with an overshoot bounce */
+      .defbubble .w.w1 { font-weight: 600; font-size: 13.5px; color: #56307e; }
+      .defbanner.show .defbubble .w.w1 {
+        animation: wordSoft .55s ease-out both;
+        animation-delay: var(--d, 0s);
+      }
+      .defbubble .w.w2 { font-weight: 800; font-size: 19px; }
+      .defbanner.show .defbubble .w.w2 {
+        animation: wordPunch .2s cubic-bezier(.2, 1.6, .4, 1) both;
+        animation-delay: var(--d, 0s);
+      }
+      .defbubble .w.laugh { font-weight: 800; font-size: 23px; color: #b01e30; letter-spacing: .02em; }
+      .defbanner.show .defbubble .w.laugh {
+        animation: laughBurst .55s cubic-bezier(.2, 1.8, .4, 1) both;
+        animation-delay: var(--d, 0s);
+      }
+      @keyframes wordSoft {
+        from { opacity: 0; transform: translateY(-4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes wordPunch {
+        0% { opacity: 0; transform: scale(1.5) rotate(-2deg); }
+        60% { opacity: 1; transform: scale(.94); }
+        100% { opacity: 1; transform: scale(1); }
+      }
+      @keyframes laughBurst {
+        0% { opacity: 0; transform: scale(.4) rotate(-4deg); }
+        55% { opacity: 1; transform: scale(1.22) rotate(2deg); }
+        75% { transform: scale(.96) rotate(-1deg); }
+        100% { opacity: 1; transform: scale(1) rotate(0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .defbanner.show .defdrac, .defbanner.show .defbubble { animation: none; }
+        .defbubble .w { animation: none; opacity: 1; }
+      }
+      .skillhint-x {
+        appearance: none;
+        flex: none;
+        border: 2px solid var(--accent);
+        background: var(--accent);
+        color: #3a1c00;
+        font-family: inherit;
+        font-weight: 900;
+        font-size: 12.5px;
+        border-radius: 999px;
+        padding: 6px 12px;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      /* ---------- stage ---------- */
+      .stage {
+        position: relative;
+        border-radius: 22px;
+        overflow: hidden;
+        border: 3px solid #0d0820;
+        box-shadow: 0 18px 50px rgba(0,0,0,.5), 0 0 0 2px #3a2a75;
+        background: #241453;
+        aspect-ratio: 450 / 740;
+        /* fit inside whatever height the first screen leaves for the stage,
+           keeping the 450/740 shape (fallback: full width, as before) */
+        width: min(100cqw, calc(100cqh * 450 / 740));
+      }
+      canvas#game {
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+      }
+      .overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 6;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        justify-content: safe center;
+        gap: 10px;
+        background: rgba(16, 8, 38, .3);
+        text-align: center;
+        padding: 16px;
+        overflow-y: auto;
+        transition: opacity .3s ease;
+      }
+      .overlay.hidden { opacity: 0; pointer-events: none; }
+      .overlay .big {
+        font-size: 26px;
+        font-weight: 900;
+        letter-spacing: .02em;
+        text-shadow: 0 3px 0 rgba(0,0,0,.35);
+      }
+      .overlay .sub {
+        font-size: 13.5px;
+        color: var(--ink-dim);
+        line-height: 1.55;
+        max-width: 320px;
+      }
+      .overlay .play {
+        font-size: 17px;
+        padding: 14px 30px;
+      }
+      /* engine watchdog: floats over the field when game.js never
+         arrived — the top Start button would otherwise be silently dead */
+      .engine-retry-note {
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 8;
+        background: rgba(40, 10, 20, .92);
+        border: 1px solid rgba(255, 107, 107, .65);
+        color: #ffd9d9;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 13.5px;
+        line-height: 1.5;
+        max-width: 86%;
+        text-align: center;
+      }
+      /* win text floats over the candy explosion — no panel behind it,
+         so the bursting house and candy stay fully visible */
+      .winbanner {
+        position: absolute;
+        z-index: 2;
+        left: 50%;
+        top: 34%;
+        transform: translate(-50%, -50%) scale(.6);
+        text-align: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .25s ease, transform .25s cubic-bezier(.2, 1.6, .4, 1);
+        width: max-content;
+        max-width: 94%;
+      }
+      .winbanner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      .winbanner .t1 {
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 800;
+        font-size: 46px;
+        letter-spacing: .04em;
+        line-height: 1.1;
+        color: #ffd23e;
+        text-shadow:
+          2px 0 0 #431d00, -2px 0 0 #431d00, 0 2px 0 #431d00, 0 -2px 0 #431d00,
+          2px 2px 0 #431d00, -2px 2px 0 #431d00, 2px -2px 0 #431d00, -2px -2px 0 #431d00,
+          0 6px 0 rgba(163, 77, 0, .9), 0 14px 30px rgba(0, 0, 0, .6);
+      }
+      /* ---------- tower choice popup (pops when progress fills) ---------- */
+      /* no big panel box: the title and the monster cards float
+         straight over the (frozen) game, cards keep their own frames */
+      .choice {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(.85);
+        width: 92%;
+        max-width: 400px;
+        background: none;
+        border: none;
+        padding: 0;
+        text-align: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .22s ease, transform .22s cubic-bezier(.2, 1.6, .4, 1);
+        z-index: 7;
+      }
+      .choice.show { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+      .choice-t {
+        font-size: 21px; font-weight: 900; color: #ffd23e; margin-bottom: 12px;
+        text-shadow:
+          2px 0 0 #431d00, -2px 0 0 #431d00, 0 2px 0 #431d00, 0 -2px 0 #431d00,
+          2px 2px 0 #431d00, -2px 2px 0 #431d00, 2px -2px 0 #431d00, -2px -2px 0 #431d00,
+          0 5px 0 rgba(163, 77, 0, .85), 0 10px 22px rgba(0, 0, 0, .65);
+      }
+      .choice-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 7px;
+      }
+      /* with five cards the last one centres itself in the second
+         row; with six (or any full rows) they simply fill the grid */
+      .choice-grid .card:last-child:nth-child(5) { grid-column: 2; }
+      /* ---------- tower upgrade panel (tap a tower wearing LV UP!) ---------- */
+      .upanel {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(.85);
+        width: 86%;
+        max-width: 330px;
+        background: rgba(24, 14, 54, .97);
+        border: 2px solid var(--accent);
+        border-radius: 18px;
+        padding: 14px 16px 12px;
+        text-align: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .22s ease, transform .22s cubic-bezier(.2, 1.6, .4, 1);
+        z-index: 8;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, .55);
+      }
+      .upanel.show { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+      .up-t { font-size: 19px; font-weight: 900; color: #ffd23e; }
+      .up-lv { font-size: 14px; font-weight: 800; color: var(--ink); margin: 2px 0 8px; }
+      .up-lv .st { color: #ffd23e; letter-spacing: 2px; }
+      .up-stats { text-align: left; font-size: 13px; line-height: 1.5; color: var(--ink-dim); margin-bottom: 10px; }
+      .up-stats .row { display: flex; justify-content: space-between; gap: 10px; padding: 2.5px 0; border-bottom: 1px dashed rgba(185, 174, 222, .25); }
+      .up-stats .row:last-child { border-bottom: none; }
+      .up-stats b { color: var(--ink); font-weight: 700; white-space: nowrap; }
+      .up-stats .nx { color: var(--good); font-weight: 800; }
+      .up-stats .sp { color: #ffd9a0; white-space: normal; text-align: right; }
+      .up-btns { display: flex; gap: 8px; justify-content: center; }
+      /* ---------- defeat report popup: the supplied poster art
+         (assets/defeat-report.webp) IS the whole popup — its
+         background is TRANSPARENT (the white corners were keyed
+         out), so NO backing plate sits under it: the poster
+         floats directly over the dimmed stage about a second
+         after the KIDS WIN! banner, its only shadow a drop-shadow
+         that follows the poster's own silhouette. The live
+         numbers are laid into the poster's empty stat cards in
+         the concept art's own style: small pale-lavender labels,
+         big chunky bright-yellow Baloo 2 values, dark-purple
+         words in the ghost's bubble, and yellow + pink outlined
+         lettering on the share card. Every stat cell is a fixed
+         box matched to its painted card (positions re-measured
+         off the transparent art) with overflow hidden, so a
+         label + value can never spill past the card's frame.
+         The poster's painted Share Result / Play Again buttons
+         get transparent tap zones laid exactly over them.
+         Closing it via the X leaves the celebration screen (and
+         the top Restart button) fully usable ---------- */
+      .battlereport {
+        position: absolute;
+        inset: 0;
+        z-index: 9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(12, 5, 30, .62);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .25s ease;
+      }
+      .battlereport.show { opacity: 1; pointer-events: auto; }
+      .br-card {
+        position: relative;
+        /* the poster is 1086x1448 (3:4): fit by width, but never
+           taller than the stage — 72cqh of width keeps its height
+           at ~96% of the stage height. Deliberately NO background,
+           border-radius or box-shadow here: with the transparent
+           art any of those would paint a visible rectangular
+           plate behind the poster */
+        width: min(94%, 72cqh);
+        container-type: inline-size;
+        transform: scale(.88);
+        transition: transform .25s cubic-bezier(.2, 1.6, .4, 1);
+      }
+      .battlereport.show .br-card { transform: scale(1); }
+      @media (prefers-reduced-motion: reduce) {
+        .br-card { transition: none; }
+      }
+      /* the shadow hugs the poster's alpha silhouette (the kids
+         and tombstones up top, the panel below) instead of the
+         image's rectangular bounds, so the transparent corners
+         stay invisible over the dimmed game */
+      .br-art {
+        display: block;
+        width: 100%;
+        height: auto;
+        filter: drop-shadow(0 16px 26px rgba(0, 0, 0, .55));
+      }
+      /* the X sits over the poster's transparent top-right
+         corner — i.e. over the dimmed game, not over art — so it
+         is pale with a dark halo to stay visible there */
+      .br-close {
+        position: absolute;
+        top: .5%;
+        right: 1.5%;
+        z-index: 7;
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: #f4efff;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, .8), 0 0 2px rgba(0, 0, 0, .8);
+        font-family: inherit;
+        font-size: 7.5cqw;
+        font-weight: 700;
+        line-height: 1;
+        padding: 4px 8px;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      .br-close:active { transform: scale(.92); }
+      /* one stat cell per painted card: a FIXED box inset inside
+         the card's frame (positions re-measured off the
+         transparent art: row 1 cards span y 35.6%–45.4%, row 2
+         y 45.9%–55.4%, and each text zone starts just right of
+         the card's painted icon). The label + value stack is
+         vertically centred in the box and the box clips at the
+         card's inner edge, so the numbers sit INSIDE their
+         cards — previously the cells had no height at all and
+         the values simply painted past the cards' bottoms */
+      .br-cell {
+        position: absolute;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
+        text-align: left;
+      }
+      .br-lab {
+        display: block;
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 700;
+        font-size: 2.6cqw;
+        line-height: 1.1;
+        color: #c9bdf2;
+        letter-spacing: .01em;
+      }
+      .br-val {
+        display: block;
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 800;
+        font-size: 5.2cqw;
+        line-height: 1.05;
+        color: #ffd23e;
+        text-shadow: 0 2px 0 rgba(67, 29, 0, .55), 0 3px 8px rgba(0, 0, 0, .35);
+        white-space: nowrap;
+      }
+      .br-val-name { font-size: 4.2cqw; line-height: 1.15; }
+      .br-c-wave  { left: 17.3%; top: 36.1%; width: 17.2%; height: 8.7%; }
+      .br-c-kids  { left: 48.1%; top: 36.1%; width: 15.3%; height: 8.7%; }
+      .br-c-combo { left: 75.3%; top: 36.1%; width: 17.5%; height: 8.7%; }
+      .br-c-top   { left: 20.1%; top: 46.5%; width: 28.3%; height: 8.6%; }
+      .br-c-bomb  { left: 65.6%; top: 46.5%; width: 27%;   height: 8.6%; }
+      /* the Top Defender's REAL face: this little canvas covers
+         the poster's baked-in Frankenstein (measured head bbox
+         x 97–208, y 685–788 of the 1086x1448 art) and the engine
+         paints a card-coloured patch plus this run's actual
+         top-defender tower in its Lv3 form into it — so the
+         portrait always matches the name beside it. The slot is
+         deliberately SMALLER than the old patch: x 91–213,
+         y 676–792 of the art, so it sits fully INSIDE the
+         painted card (interior x ≥80, y 676–796 at this card)
+         with a margin to the card's border on every side,
+         instead of pressing over the frame lines */
+      .br-topface {
+        position: absolute;
+        z-index: 2;
+        left: 8.38%;
+        top: 46.69%;
+        width: 11.23%;
+        height: 8.01%;
+        display: block;
+      }
+      /* the ghost's speech bubble: dark purple words centred in
+         the painted lavender bubble */
+      .br-bubble {
+        position: absolute;
+        z-index: 2;
+        left: 26.5%;
+        top: 56.9%;
+        width: 47%;
+        height: 7%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        text-align: center;
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 800;
+        font-size: 3.2cqw;
+        line-height: 1.18;
+        color: #33186b;
+      }
+      /* the dashed share card (painted frame: y 67.5%–83.0%,
+         text zone between the polaroid and the skeleton at
+         x ~29%–73%): chunky outlined lettering like the concept
+         — cream + bright yellow first line, pink "in Space 5!",
+         pale sub-line under it. The whole block is a fixed box
+         vertically centred INSIDE the dashed frame with overflow
+         hidden, so the sub-line can no longer drift down onto
+         the painted buttons below (previously the block was
+         top-anchored with no height and simply grew past the
+         frame onto the Share Result button) */
+      .br-sharecard {
+        position: absolute;
+        z-index: 2;
+        left: 29.5%;
+        top: 68.6%;
+        width: 43.5%;
+        height: 13.6%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
+        text-align: center;
+      }
+      .br-share-big {
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 800;
+        font-size: 4.2cqw;
+        line-height: 1.14;
+        color: #fff3d6;
+        text-shadow:
+          2px 0 0 #2b1050, -2px 0 0 #2b1050, 0 2px 0 #2b1050, 0 -2px 0 #2b1050,
+          2px 2px 0 #2b1050, -2px 2px 0 #2b1050, 2px -2px 0 #2b1050, -2px -2px 0 #2b1050,
+          0 4px 0 rgba(23, 8, 48, .8), 0 8px 18px rgba(0, 0, 0, .5);
+      }
+      .br-share-big em { font-style: normal; color: #ffd23e; }
+      .br-share-big .br-share-pink { color: #ff6ec7; }
+      .br-share-sub {
+        margin-top: .8cqw;
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 700;
+        font-size: 3.3cqw;
+        line-height: 1.2;
+        color: #e9e2ff;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, .55);
+      }
+      /* Dracula in the polaroid frame the poster paints inside
+         the dashed share card (inner photo area measured off
+         the art: centre x 18.3% / y 75.0%, ~15.9% x ~9.9% of
+         the card, tilted about -6 degrees): one of four
+         portraits, picked by how far the run got (see
+         draculaPortrait in game.js), fills the whole inner
+         frame — the four files come pre-cropped to this
+         frame's ~1.21 aspect, faces centred — and his
+         wave-tiered verdict sits over the picture's bottom
+         edge on a dark gradient so it stays readable */
+      .br-polaroid {
+        position: absolute;
+        z-index: 2;
+        left: 18.28%;
+        top: 75.03%;
+        width: 15.93%;
+        height: 9.88%;
+        transform: translate(-50%, -50%) rotate(-6deg);
+        overflow: hidden;
+        box-sizing: border-box;
+        pointer-events: none;
+      }
+      .br-drac {
+        position: absolute;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 4%;
+      }
+      .br-drac-quote {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 3.4cqw .8cqw .8cqw;
+        background: linear-gradient(to top, rgba(16, 4, 38, .9) 45%, rgba(16, 4, 38, 0));
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 800;
+        font-size: 1.85cqw;
+        line-height: 1.15;
+        color: #f3edff;
+        text-align: center;
+        text-shadow: 0 2px 5px rgba(0, 0, 0, .65);
+      }
+      /* transparent tap zones over the poster's painted buttons.
+         They sit on the TOP layer of the card (z-index 6, above the
+         stat cells, bubble and share card at z-index 2), so nothing
+         transparent can ever cover them and swallow the tap — but
+         ONLY while the report is actually shown. A child with
+         pointer-events:auto stays hit-testable even inside a
+         pointer-events:none parent, so forcing it on here
+         unconditionally left these two invisible buttons floating
+         over the lower play field during normal play: a tap aimed
+         at a gravestone in that area silently hit Play Again and
+         restarted the run (the game-3 sudden-restart bug). The
+         zones are therefore hard-off unless the report has .show
+         (game.js double-checks the same thing in its handlers). */
+      .br-hot {
+        position: absolute;
+        z-index: 6;
+        pointer-events: none;
+        appearance: none;
+        border: none;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* painted buttons measured off the art: Share Result
+         x 6.4%–53.4%, Play Again x 55.3%–93.9%, both
+         y 85.5%–93.4% — well clear of the share card above. The
+         Share zone is deliberately GENEROUS — it overhangs the
+         painted button on every side (stopping just short of the
+         Play Again zone) so an edge tap still lands on it */
+      .battlereport.show .br-hot { pointer-events: auto; }
+      .br-hot-share {
+        left: 4.5%; top: 84.4%; width: 50%; height: 10%;
+        border-radius: 999px;
+        transition: transform .07s ease, background-color .07s ease, box-shadow .07s ease;
+      }
+      .br-hot-again { left: 55%; top: 85.2%; width: 39%;   height: 8.6%; }
+      /* visible press feedback on the Share zone: the painted
+         button lights up and dips under the finger, so EVERY tap
+         visibly registers even before the share sheet or the
+         copied-link toast appears. :active covers most browsers;
+         the .pressing class is toggled from JS for iOS Safari,
+         which does not reliably paint :active on buttons */
+      .br-hot-share:active,
+      .br-hot-share.pressing {
+        transform: scale(.95);
+        background: rgba(255, 178, 44, .30);
+        box-shadow: 0 0 0 3px rgba(255, 210, 62, .65), 0 0 26px rgba(255, 159, 46, .85);
+      }
+      /* last-resort link box: only shown when the native share
+         sheet AND both clipboard routes all failed — the game
+         link sits in a tap-to-select field inside the popup so
+         the player can copy it by hand instead of the Share
+         button failing silently */
+      .br-linkbox {
+        position: absolute;
+        z-index: 8;
+        left: 7%;
+        top: 70.5%;
+        width: 86%;
+        box-sizing: border-box;
+        background: rgba(24, 14, 54, .97);
+        border: 2px solid var(--accent);
+        border-radius: 14px;
+        padding: 10px 12px 12px;
+        box-shadow: 0 14px 30px rgba(0, 0, 0, .6);
+      }
+      .br-linkbox[hidden] { display: none; }
+      .br-linkbox-t {
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 800;
+        font-size: 3.8cqw;
+        line-height: 1.2;
+        color: var(--ink);
+        margin-bottom: 7px;
+        padding-right: 26px;
+      }
+      .br-linkbox-url {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 3.4cqw;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(185, 174, 222, .5);
+        background: #fff;
+        color: #22104d;
+      }
+      .br-linkbox-x {
+        position: absolute;
+        top: 2px;
+        right: 6px;
+        appearance: none;
+        border: none;
+        background: transparent;
+        color: var(--ink);
+        font-family: inherit;
+        font-size: 5.5cqw;
+        font-weight: 700;
+        line-height: 1;
+        padding: 4px 6px;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
+      .brtoast {
+        position: absolute;
+        left: 50%;
+        bottom: 12px;
+        transform: translateX(-50%);
+        z-index: 10;
+        background: rgba(24, 14, 54, .96);
+        border: 2px solid var(--accent);
+        color: var(--ink);
+        font-size: 13.5px;
+        font-weight: 700;
+        border-radius: 999px;
+        padding: 9px 16px;
+        white-space: nowrap;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, .5);
+      }
+      .brtoast[hidden] { display: none; }
+      .card {
+        appearance: none;
+        font-family: inherit;
+        color: var(--ink);
+        background: var(--panel);
+        border: 2px solid var(--panel-line);
+        border-radius: 14px;
+        padding: 8px 2px 7px;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color .15s ease, box-shadow .15s ease, opacity .15s ease;
+        touch-action: manipulation;
+        user-select: none;
+      }
+      .card.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,159,46,.35), 0 0 16px rgba(255,159,46,.25); }
+      .card.cant { opacity: .48; }
+      .card.cant .cost { color: var(--ink-dim); }
+      .card svg { width: 30px; height: 30px; display: block; margin: 0 auto 3px; }
+      .card .nm { font-size: 11px; font-weight: 700; line-height: 1.25; }
+      .card .cost {
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 800;
+        font-size: 13px;
+        color: var(--accent);
+        display: inline-flex; align-items: center; gap: 3px;
+      }
+      .card .cost i {
+        width: 10px; height: 10px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%, #ffe9a8, #f5a623 70%);
+        display: inline-block;
+      }
+      /* ---------- splash / start page: the supplied cover art is the
+         whole page now — the game title rides at the top in the art's
+         own chunky cartoon lettering style, and a big START button
+         sits over the lower part of the poster ---------- */
+      .splash {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        overflow: hidden;
+        background:
+          radial-gradient(120% 55% at 50% -10%, var(--bg-soft) 0%, var(--bg) 62%);
+      }
+      .splash.gone { display: none; }
+      .splash-inner {
+        max-width: 540px;
+        height: 100vh;
+        height: 100dvh;
+        margin: 0 auto;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+      }
+      .cover {
+        position: relative;
+        border-radius: 22px;
+        border: 3px solid #0d0820;
+        box-shadow: 0 18px 50px rgba(0,0,0,.5), 0 0 0 2px #3a2a75;
+        overflow: hidden;
+        background: #241453;
+        /* fill the whole phone screen: the poster stretches to the
+           available height and width (object-fit crops a sliver of the
+           art if the screen ratio differs) instead of floating small
+           in a sea of empty background */
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+        margin: 0 auto;
+      }
+      .cover img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        transition: filter .45s ease, transform .45s ease;
+      }
+      /* low-res placeholder state: the tiny WebP is stretched over the
+         whole poster, so a soft blur hides its pixelation until the
+         full-resolution WebP swaps in and this class comes off */
+      .cover img.cover-low { filter: blur(16px); transform: scale(1.05); }
+      .game-title {
+        position: absolute;
+        top: 4%;
+        left: 0;
+        right: 0;
+        margin: 0;
+        text-align: center;
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 800;
+        line-height: 1;
+        transform: rotate(-2deg);
+        pointer-events: none;
+        /* a gentle endless sway so the poster feels alive */
+        animation: titleSway 4.6s ease-in-out infinite;
+      }
+      @keyframes titleSway {
+        0%, 100% { transform: rotate(-2.5deg) translateY(0); }
+        50% { transform: rotate(-1.5deg) translateY(-4px); }
+      }
+      /* ---------- Dracula's speech bubble: NOT there when the page
+         first paints. Once the start page has loaded and is on
+         screen, the bootstrap script adds .show: the bubble grows in
+         from nothing at its tail by his head, then the words fade in
+         one by one; afterwards it bobs very gently ---------- */
+      .dracula-bubble {
+        position: absolute;
+        left: 3%;
+        top: 17.5%;
+        width: 58%;
+        max-width: 290px;
+        z-index: 3;
+        /* NO background or border of its own any more: the visible
+           bubble is a single SVG outline (.bubble-shape, below) —
+           one continuous path that runs around the rounded
+           rectangle and out around the triangular tail tip and
+           back, so the rectangle and the tail are one shape with
+           one unbroken dark-purple stroke and there is no bottom
+           edge segment crossing the tail at all. The backdrop
+           blur stays on this box, so the translucent fill keeps
+           the same frosted look over the poster */
+        -webkit-backdrop-filter: blur(3px);
+        backdrop-filter: blur(3px);
+        color: #2b1050;
+        padding: 9px 12px 10px;
+        font-family: "Baloo 2", sans-serif;
+        font-weight: 700;
+        font-size: clamp(12px, 3.4vw, 15px);
+        line-height: 1.35;
+        box-shadow: 0 8px 20px rgba(10, 4, 30, .45);
+        transform-origin: 80% 100%;
+        /* pre-appearance state: fully shrunk and invisible, so the
+           bubble is genuinely absent until the page has loaded and
+           the .show class starts the pop from nothing */
+        opacity: 0;
+        transform: scale(.4) translateY(8px);
+      }
+      .dracula-bubble.show {
+        animation:
+          bubblePop .5s cubic-bezier(.34, 1.56, .64, 1) both,
+          bubbleBob 3.8s ease-in-out 1.2s infinite;
+      }
+      /* the bubble + tail as ONE drawn shape: an inline SVG sits
+         behind the words, sized to the bubble box plus the extra
+         strip below it where the tail tip lives. Its single path
+         (see the markup) outlines the rounded rectangle, diverts
+         down around the tail triangle where the tail joins the
+         bottom edge — same spot as the old tail, tip centred at
+         ~77% of the width, ~13px below the bubble — and continues
+         along the rest of the bottom edge. Because the stroke is
+         one continuous outline, the join has no horizontal line
+         to hide: nothing is patched or covered. vector-effect
+         keeps the stroke at a true 3px however the shape is
+         stretched to fit the box */
+      .dracula-bubble .bubble-shape {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: calc(100% + 14px);
+        overflow: visible;
+        pointer-events: none;
+      }
+      /* the words paint above the SVG fill */
+      .dracula-bubble .w { position: relative; z-index: 1; }
+      @keyframes bubblePop {
+        0% { opacity: 0; transform: scale(.4) translateY(8px); }
+        100% { opacity: 1; transform: scale(1) translateY(0); }
+      }
+      @keyframes bubbleBob {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-3px); }
+      }
+      .dracula-bubble .w {
+        display: inline-block;
+        opacity: 0;
+      }
+      .dracula-bubble.show .w {
+        animation: wordIn .28s ease-out both;
+        animation-delay: var(--d, 0s);
+      }
+      @keyframes wordIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .game-title .t-or {
+        display: block;
+        font-size: clamp(22px, 7.5vw, 38px);
+        letter-spacing: .12em;
+        color: #ffe9b8;
+        text-shadow:
+          2px 0 0 #2b1050, -2px 0 0 #2b1050, 0 2px 0 #2b1050, 0 -2px 0 #2b1050,
+          2px 2px 0 #2b1050, -2px 2px 0 #2b1050, 2px -2px 0 #2b1050, -2px -2px 0 #2b1050,
+          0 5px 0 rgba(23, 8, 48, .85), 0 12px 26px rgba(0, 0, 0, .55);
+      }
+      .game-title .t-def {
+        display: block;
+        margin-top: 4px;
+        font-size: clamp(38px, 13vw, 66px);
+        letter-spacing: .04em;
+        color: #ffb03a;
+        text-shadow:
+          3px 0 0 #2b1050, -3px 0 0 #2b1050, 0 3px 0 #2b1050, 0 -3px 0 #2b1050,
+          3px 3px 0 #2b1050, -3px 3px 0 #2b1050, 3px -3px 0 #2b1050, -3px -3px 0 #2b1050,
+          0 7px 0 rgba(23, 8, 48, .85), 0 16px 32px rgba(0, 0, 0, .6);
+      }
+      .btn.start {
+        position: absolute;
+        left: 50%;
+        bottom: 4.5%;
+        transform: translateX(-50%);
+        z-index: 2;
+        font-family: "Baloo 2", sans-serif;
+        font-size: clamp(20px, 6vw, 26px);
+        font-weight: 800;
+        letter-spacing: .18em;
+        padding: 13px 42px 13px calc(42px + .18em);
+        border-width: 3px;
+        white-space: nowrap;
+        animation: startPulse 1.6s ease-in-out infinite;
+      }
+      .btn.start:active { transform: translateX(-50%) scale(.95); }
+      /* ---------- visitor counter badge: a tiny third-party
+         badge pinned to the very bottom centre of the poster,
+         below the START button, counting one hit per page load.
+         It is decoration only — if the image fails to load, its
+         onerror hides the whole row and the page is unaffected */
+      .visitor-badge {
+        position: absolute;
+        left: 50%;
+        bottom: 8px;
+        transform: translateX(-50%);
+        z-index: 2;
+        line-height: 0;
+        opacity: .95;
+      }
+      .visitor-badge img { display: block; height: 20px; width: auto; }
+      @keyframes startPulse {
+        0%, 100% { box-shadow: 0 6px 18px rgba(255, 150, 40, .4), 0 0 6px rgba(255, 176, 58, .3); }
+        50% { box-shadow: 0 6px 22px rgba(255, 150, 40, .55), 0 0 28px 9px rgba(255, 176, 58, .75); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .btn.start { animation: none; box-shadow: 0 6px 18px rgba(255, 150, 40, .5), 0 0 16px rgba(255, 176, 58, .6); }
+        .game-title { transform: none; animation: none; }
+        .dracula-bubble { animation: none; opacity: 1; transform: none; }
+        .dracula-bubble .w { animation: none; opacity: 1; }
+      }
+      /* ---------- pre-splash: a brief title card shown BEFORE the
+         start page. One tap anywhere dismisses it — and because that
+         tap is a real user gesture, it unlocks the browser's audio,
+         so the splash page's skeleton-dance music starts by itself
+         the moment the start page appears ---------- */
+      .presplash {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background:
+          radial-gradient(120% 55% at 50% -10%, var(--bg-soft) 0%, var(--bg) 62%);
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+        transition: opacity .35s ease, visibility 0s linear .35s;
+      }
+      .presplash.gone { opacity: 0; visibility: hidden; }
+      .pre-inner { text-align: center; padding: 20px; }
+      .pre-moon {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 30px;
+        border-radius: 50%;
+        box-shadow: 15px 7px 0 0 #ffc95e;
+        transform: rotate(-18deg) translateX(-8px);
+        filter: drop-shadow(0 0 18px rgba(255, 170, 60, .45));
+      }
+      .pre-title {
+        margin: 0;
+        font-family: "Baloo 2", system-ui, sans-serif;
+        font-weight: 800;
+        line-height: 1.05;
+        transform: rotate(-2deg);
+        animation: titleSway 4.6s ease-in-out infinite;
+      }
+      .pre-title .l1 {
+        display: block;
+        font-size: clamp(30px, 9.5vw, 46px);
+        letter-spacing: .12em;
+        color: #ffe9b8;
+        text-shadow:
+          2px 0 0 #2b1050, -2px 0 0 #2b1050, 0 2px 0 #2b1050, 0 -2px 0 #2b1050,
+          2px 2px 0 #2b1050, -2px 2px 0 #2b1050, 2px -2px 0 #2b1050, -2px -2px 0 #2b1050,
+          0 5px 0 rgba(23, 8, 48, .85), 0 12px 26px rgba(0, 0, 0, .55);
+      }
+      .pre-title .l2 {
+        display: block;
+        margin-top: 6px;
+        font-size: clamp(40px, 13.5vw, 64px);
+        letter-spacing: .03em;
+        color: #ffb03a;
+        text-shadow:
+          3px 0 0 #2b1050, -3px 0 0 #2b1050, 0 3px 0 #2b1050, 0 -3px 0 #2b1050,
+          3px 3px 0 #2b1050, -3px 3px 0 #2b1050, 3px -3px 0 #2b1050, -3px -3px 0 #2b1050,
+          0 7px 0 rgba(23, 8, 48, .85), 0 16px 32px rgba(0, 0, 0, .6);
+      }
+      .pre-hint {
+        margin: 34px 0 0;
+        font-size: 14.5px;
+        font-weight: 700;
+        letter-spacing: .16em;
+        color: var(--ink-dim);
+        animation: hintBlink 1.8s ease-in-out infinite;
+      }
+      @keyframes hintBlink {
+        0%, 100% { opacity: .45; }
+        50% { opacity: 1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .pre-title { animation: none; transform: rotate(-2deg); }
+        .pre-hint { animation: none; opacity: .85; }
+        .presplash { transition: none; }
+      }
+      /* ---------- boot loading screen: shown the moment the page
+         paints, in place of a bare spinner. The bar is driven ONLY
+         by real load events — the poster placeholder, the full
+         poster, the game-code file, the game font and the engine's
+         own boot each own one segment of the bar, and a segment
+         fills only when that stage genuinely finishes (see the
+         boot-progress script right below the markup) ---------- */
+      .bootload {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background:
+          radial-gradient(120% 55% at 50% -10%, var(--bg-soft) 0%, var(--bg) 62%);
+        transition: opacity .4s ease, visibility 0s linear .4s;
+      }
+      .bootload.gone { opacity: 0; visibility: hidden; }
+      .boot-inner { text-align: center; padding: 20px; width: min(340px, 84vw); }
+      .boot-moon {
+        width: 54px;
+        height: 54px;
+        margin: 0 auto 24px;
+        border-radius: 50%;
+        box-shadow: 13px 6px 0 0 #ffc95e;
+        transform: rotate(-18deg) translateX(-7px);
+        filter: drop-shadow(0 0 16px rgba(255, 170, 60, .45));
+      }
+      .boot-title {
+        margin: 0 0 22px;
+        font-family: "Baloo 2", system-ui, sans-serif;
+        font-weight: 800;
+        font-size: clamp(23px, 7vw, 32px);
+        letter-spacing: .05em;
+        color: #ffb03a;
+        text-shadow:
+          2px 0 0 #2b1050, -2px 0 0 #2b1050, 0 2px 0 #2b1050, 0 -2px 0 #2b1050,
+          2px 2px 0 #2b1050, -2px 2px 0 #2b1050, 2px -2px 0 #2b1050, -2px -2px 0 #2b1050,
+          0 5px 0 rgba(23, 8, 48, .85), 0 12px 26px rgba(0, 0, 0, .55);
+      }
+      .boot-pct {
+        font-family: "Baloo 2", system-ui, sans-serif;
+        font-weight: 800;
+        font-size: 46px;
+        line-height: 1;
+        color: var(--ink);
+        text-shadow: 0 3px 0 rgba(0, 0, 0, .35);
+      }
+      .boot-track {
+        height: 16px;
+        margin: 14px 0 11px;
+        border-radius: 999px;
+        border: 2px solid var(--panel-line);
+        background: var(--chip);
+        overflow: hidden;
+      }
+      .boot-fill {
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff8a1e, #ffb03a);
+        box-shadow: 0 0 12px rgba(255, 159, 46, .55);
+        transition: width .3s ease;
+      }
+      .boot-stage {
+        margin: 0;
+        min-height: 1.25em;
+        font-size: 12.5px;
+        font-weight: 700;
+        letter-spacing: .18em;
+        color: var(--ink-dim);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .bootload { transition: none; }
+        .boot-fill { transition: none; }
+      }
+      .howto {
+        margin-top: 14px;
+        font-size: 13px;
+        line-height: 1.8;
+        color: var(--ink-dim);
+        background: rgba(29, 20, 66, .6);
+        border: 2px solid var(--panel-line);
+        border-radius: 14px;
+        padding: 10px 14px;
+      }
+      .howto b { color: var(--ink); }
+      @media (max-width: 380px) {
+        .card .nm { font-size: 10px; }
+        .overlay .big { font-size: 22px; }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- boot loading screen: the first thing the page paints. Its
+         percentage is NOT a timer or a guess — five real load events
+         each own one segment of the bar (poster placeholder 10%,
+         full poster +20%, game code +30%, game font +20%, engine
+         initialised +20%) and the number only ever advances when
+         one of those events actually fires. When it reaches 100%
+         the screen fades and the title card underneath takes over -->
+    <div class="bootload" id="bootload" role="status" aria-label="Loading the game">
+      <div class="boot-inner">
+        <div class="boot-moon" aria-hidden="true"></div>
+        <p class="boot-title">TRICK OR DEFEND!</p>
+        <div class="boot-pct" id="bootPct">0%</div>
+        <div class="boot-track"><div class="boot-fill" id="bootFill"></div></div>
+        <p class="boot-stage" id="bootStage">LOADING THE CASTLE POSTER…</p>
+      </div>
+    </div>
+    <script>
+      /* boot progress: other scripts report their stage through
+         window.__tdBootProgress.hit(id); the engine reports through
+         window.__tdEngineReady. The displayed number eases toward
+         the total of the stages that have REALLY finished and never
+         past it, so the bar can sit still while a stage is genuinely
+         still loading — it is a readout, not an animation. A long
+         watchdog at the end only guards against a stalled network
+         trapping the player behind this screen forever. */
+      (function () {
+        var STAGES = [
+          { id: 'art-low', w: 10, label: 'LOADING THE CASTLE POSTER…' },
+          { id: 'art',     w: 20, label: 'LOADING THE CASTLE POSTER…' },
+          { id: 'code',    w: 30, label: 'LOADING GAME CODE…' },
+          { id: 'font',    w: 20, label: 'LOADING THE GAME FONT…' },
+          { id: 'engine',  w: 20, label: 'STARTING THE GAME ENGINE…' }
+        ];
+        var box = document.getElementById('bootload');
+        var fill = document.getElementById('bootFill');
+        var pctEl = document.getElementById('bootPct');
+        var stageEl = document.getElementById('bootStage');
+        if (!box || !fill || !pctEl || !stageEl) return;
+        var done = {}, target = 0, shown = 0, gone = false, finishStarted = false;
+        function label() {
+          for (var i = 0; i < STAGES.length; i++) if (!done[STAGES[i].id]) return STAGES[i].label;
+          return 'READY!';
+        }
+        function render() {
+          fill.style.width = shown + '%';
+          pctEl.textContent = Math.floor(shown) + '%';
+          stageEl.textContent = label();
+        }
+        function tick() {
+          if (gone) return;
+          if (shown < target) {
+            shown = Math.min(target, shown + Math.max(0.7, (target - shown) * 0.16));
+            if (target - shown < 0.4) shown = target;
+            render();
+          }
+          if (target >= 100 && shown >= 99.6 && !finishStarted) {
+            finishStarted = true;
+            shown = 100;
+            render();
+            setTimeout(function () { box.classList.add('gone'); gone = true; }, 380);
+          }
+          requestAnimationFrame(tick);
+        }
+        function hit(id) {
+          if (done[id]) return;
+          done[id] = true;
+          target = 0;
+          for (var i = 0; i < STAGES.length; i++) if (done[STAGES[i].id]) target += STAGES[i].w;
+          render();
+        }
+        window.__tdBootProgress = { hit: hit };
+        window.__tdEngineReady = function () { hit('engine'); };
+        render();
+        requestAnimationFrame(tick);
+        setTimeout(function () {
+          for (var i = 0; i < STAGES.length; i++) hit(STAGES[i].id);
+        }, 9000);
+      })();
+    </script>
+    <!-- pre-splash: a brief title card before the start page. The
+         player's tap anywhere on it is the gesture that unlocks
+         audio, so the start page's music begins on its own the
+         moment this card fades away -->
+    <div class="presplash" id="presplash" role="button" tabindex="0" aria-label="Trick or Treaters! Tap anywhere to continue">
+      <div class="pre-inner">
+        <div class="pre-moon" aria-hidden="true"></div>
+        <p class="pre-title"><span class="l1">TRICK OR</span><span class="l2">TREATERS!</span></p>
+        <p class="pre-hint">TAP ANYWHERE TO CONTINUE</p>
+      </div>
+    </div>
+    <script>window.__tdPreUp = true; /* the title card is up: hold Dracula's bubble until it is dismissed */</script>
+    <!-- splash / start page: the cover art with the game title on top;
+         its START button drops straight into the game -->
+    <div class="splash" id="splash">
+      <div class="splash-inner">
+        <div class="cover">
+          <img class="cover-low" src="assets/splash-cover-2-low.webp" data-full="assets/splash-cover-2.webp" width="940" height="1673" fetchpriority="high" alt="Outside a Halloween castle, Count Dracula leads Frankenstein, a ghost, a witch, a mummy and a black cat against trick-or-treat kids carrying pumpkin buckets" onerror="if(!this.dataset.fbk){this.dataset.fbk=1;this.classList.remove('cover-low');this.src='assets/splash-cover.jpg';}" />
+          <h1 class="game-title"><span class="t-or">TRICK OR</span><span class="t-def">DEFEND!</span></h1>
+          <div class="dracula-bubble" role="note" aria-label="Count Dracula says: I despise those pesky trick-or-treaters! Minions, keep them away from my castle!"><svg class="bubble-shape" viewBox="0 0 300 118" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M 17 2 H 283 Q 298 2 298 17 V 87 Q 298 102 283 102 H 244 L 233.5 113.5 Q 232 116.2 230.5 113.5 L 220 102 H 17 Q 2 102 2 87 V 17 Q 2 2 17 2 Z" fill="rgba(255, 246, 224, .78)" stroke="#2b1050" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg><span class="w" style="--d:.55s">I</span> <span class="w" style="--d:.62s">despise</span> <span class="w" style="--d:.69s">those</span> <span class="w" style="--d:.76s">pesky</span> <span class="w" style="--d:.83s">trick-or-treaters!</span> <span class="w" style="--d:.97s">Minions,</span> <span class="w" style="--d:1.04s">keep</span> <span class="w" style="--d:1.11s">them</span> <span class="w" style="--d:1.18s">away</span> <span class="w" style="--d:1.25s">from</span> <span class="w" style="--d:1.32s">my</span> <span class="w" style="--d:1.39s">castle!</span></div>
+          <button class="btn primary start" id="btnEnter" type="button">START</button>
+          <div class="visitor-badge" id="visitorBadge"><img src="https://visitor-badge.laobi.icu/badge?page_id=td-halloween-space5-2026" alt="" onerror="var p=document.getElementById('visitorBadge'); if(p) p.style.display='none';" /></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      /* splash bootstrap: this tiny script sits right after the splash
+         markup, so the START button is wired the moment the cover page
+         exists — long before the game engine (further down) finishes
+         booting in the background. A tap that lands early is remembered
+         and honoured the instant the engine is ready. */
+      /* the game font (Baloo 2) is fetched ONLY here — when the player
+         enters the game — never while the start page is loading: the
+         splash shows in system type, and once the font arrives the
+         .fonts-in class swaps the game's text over to it */
+      window.__tdLoadGameFont = function () {
+        if (window.__tdFontLoading) return;
+        window.__tdFontLoading = true;
+        /* STANDALONE BUILD: Baloo 2 is self-hosted under assets/fonts/
+           (the exact files Google Fonts serves, SIL OFL 1.1), so the
+           game never has to reach fonts.googleapis.com /
+           fonts.gstatic.com — unreachable from mainland China. The
+           loader contract is unchanged: css.onload still adds
+           .fonts-in, and window.__tdFontCss is still exposed for the
+           boot-progress wiring below. */
+        var css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = 'assets/fonts/baloo2.css';
+        css.onload = function () { document.body.classList.add('fonts-in'); };
+        document.head.appendChild(css);
+        /* exposed so the boot-progress wiring can hear the moment
+           the font stylesheet (and then the faces) have arrived */
+        window.__tdFontCss = css;
+      };
+      /* ---------- START-PAGE music, self-contained in this splash
+         script: the cheerful Halloween skeleton-dance NO LONGER waits
+         for the game engine. It used to live inside game.js, whose tap
+         listeners were only registered once the engine had loaded and
+         booted in the background — and the one tap a player naturally
+         makes on this page (START) instantly switched it off, so on a
+         real phone the dance was effectively never heard. This copy
+         runs from the page's first paint with its OWN AudioContext:
+         it tries to start at once (some webviews allow sound right
+         away), and the player's first touch, tap or key press
+         anywhere on the poster (re)starts and resumes it inside that
+         gesture — which is what mobile browsers require before they
+         unlock audio. Tapping START stops it (below), and the game's
+         own D-minor music-box loop inside game.js — untouched —
+         takes over. The two musics stay fully separate. ---------- */
+      (function () {
+        var STEP = 0.19; // eighth-note length: brisk and merry
+        var LEAD = [
+          74, 77, 81, 86, 81, 77, 74, 77,
+          79, 82, 86, 82, 79, 77, 74, 77,
+          81, 77, 74, 77, 81, 84, 81, 77,
+          76, 73, 69, 73, 76, 81, 76, 73,
+          74, 77, 81, 86, 81, 77, 74, 77,
+          82, 81, 77, 74, 70, 74, 77, 82,
+          85, 81, 76, 73, 69, 73, 76, 81,
+          86, 81, 77, 74, 77, 81, 74, 0
+        ];
+        var BASS = [50, 55, 50, 45, 50, 46, 45, 50];   // bar roots: Dm · Gm · Dm · A · Dm · Bb · A · Dm
+        var FIFTH = [57, 62, 57, 52, 57, 53, 52, 57];
+        var CHORD = [
+          [62, 65, 69], [62, 67, 70], [62, 65, 69], [61, 64, 69],
+          [62, 65, 69], [62, 65, 70], [61, 64, 69], [62, 65, 69]
+        ];
+        var ac = null, out = null, timer = null, step = 0, next = 0, stopped = false;
+        function mf(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+        function note(freq, t, dur, type, vol) {
+          var o = ac.createOscillator(); o.type = type; o.frequency.value = freq;
+          var g = ac.createGain();
+          g.gain.setValueAtTime(0.0001, t);
+          g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+          o.connect(g); g.connect(out);
+          o.start(t); o.stop(t + dur + 0.05);
+        }
+        function scheduleStep(s, t) {
+          var bar = (s / 8) | 0, idx = s % 8;
+          var lead = LEAD[s];
+          // xylophone-style lead hopping up and down the scale
+          if (lead) note(mf(lead), t, 0.3, 'triangle', 0.21);
+          if (idx === 0) note(mf(BASS[bar]), t, 0.34, 'sine', 0.17);
+          if (idx === 4) note(mf(FIFTH[bar]), t, 0.3, 'sine', 0.13);
+          // oom-pah chord stabs on every other eighth keep the bounce
+          if (idx % 2 === 0) CHORD[bar].forEach(function (m) { note(mf(m), t, 0.22, 'triangle', 0.045); });
+          // a tiny high sparkle answers the lead late in each bar
+          if (idx === 6 && lead) note(mf(lead) * 2, t, 0.18, 'sine', 0.035);
+        }
+        function sched() {
+          if (!ac) return;
+          // while the context sits suspended its clock is frozen:
+          // when it unlocks, jump the playhead back to "now" instead
+          // of dumping a pile of overdue notes all at once
+          if (next < ac.currentTime - 0.15) next = ac.currentTime + 0.05;
+          while (next < ac.currentTime + 0.3) {
+            scheduleStep(step, next);
+            next += STEP;
+            step = (step + 1) % LEAD.length;
+          }
+        }
+        function start() {
+          if (timer || stopped) return;
+          try {
+            if (!ac) {
+              ac = new (window.AudioContext || window.webkitAudioContext)();
+              // if the system hands the context back on its own
+              // schedule after a screen-off, finish the recovery
+              // the moment it runs again (splFinish is declared
+              // further down; hoisted within this scope)
+              ac.onstatechange = function () {
+                if (ac && ac.state === 'running' && splRecoveryPending) splFinish();
+              };
+              out = ac.createGain(); out.gain.value = 0.5; out.connect(ac.destination);
+            }
+            if (ac.resume) ac.resume();
+          } catch (e) { ac = null; return; }
+          step = 0;
+          next = ac.currentTime + 0.08;
+          timer = setInterval(sched, 90);
+          sched();
+        }
+        function stop() {
+          stopped = true;
+          if (timer) { clearInterval(timer); timer = null; }
+          if (ac && out) {
+            try {
+              out.gain.cancelScheduledValues(ac.currentTime);
+              out.gain.setTargetAtTime(0.0001, ac.currentTime, 0.05);
+            } catch (e) {}
+          }
+        }
+        window.__tdStartSplashMusic = start;
+        window.__tdStopSplashMusic = stop;
+        function kick() {
+          var sp = document.getElementById('splash');
+          if (!sp || sp.classList.contains('gone')) return;
+          start();
+          // a context created before this gesture may still be
+          // suspended: resume it now, inside the gesture, where
+          // mobile browsers allow the unlock
+          if (ac && ac.state !== 'running' && ac.resume) ac.resume();
+          // if the automatic screen-off recovery was refused
+          // earlier, this touch is the fallback: finish it now,
+          // inside the gesture (recover is defined below; hoisted)
+          if (splRecoveryPending) recover();
+        }
+        document.addEventListener('pointerdown', kick);
+        document.addEventListener('touchstart', kick, { passive: true });
+        document.addEventListener('click', kick);
+        document.addEventListener('keydown', kick);
+        start(); // autoplay attempt: plays at once where the webview allows sound
+        /* ---------- screen-off recovery for THIS page's music ----------
+           Same failure as the game's audio, same cure: when the
+           phone screen turns off, the browser parks this context
+           in 'suspended' to save power and never wakes it again
+           on its own — the dance would stay silent even though the
+           start page is still sitting there. When the page comes
+           back into view (visibilitychange, with pageshow as the
+           back/forward-cache twin) resume the context ourselves
+           and refill the scheduler, so the music picks straight
+           back up with no tap needed. If the system refuses the
+           automatic resume, splRecoveryPending stays set and the
+           next tap's kick() retries it inside that gesture (kick
+           already resumes; recover() below finishes the job) */
+        var splRecoveryPending = false;
+        var splRecoverTimers = [];
+        function splClearTimers() {
+          for (var i = 0; i < splRecoverTimers.length; i++) clearTimeout(splRecoverTimers[i]);
+          splRecoverTimers = [];
+        }
+        function splFinish() {
+          splRecoveryPending = false;
+          splClearTimers();
+          if (timer) sched(); else start(); // refill the lookahead and carry on
+        }
+        function splTryResume() {
+          if (!ac) return;
+          try {
+            var p = ac.resume();
+            if (p && p.then) p.then(function () {
+              if (ac.state === 'running') splFinish();
+            }, function () { /* refused: the retry ladder / next touch keeps trying */ });
+          } catch (e) {}
+        }
+        function recover() {
+          if (stopped) return; // START was tapped: the dance is over for good
+          var sp = document.getElementById('splash');
+          if (!sp || sp.classList.contains('gone')) return;
+          if (!ac) { start(); return; }
+          if (ac.state === 'running') { splFinish(); return; }
+          // Parked: 'suspended' on Android, 'interrupted' on iOS.
+          // Flag the recovery pending FIRST — after an iOS
+          // interruption the resume() promise can hang forever,
+          // and kick() below keys its retry off this flag — then
+          // retry on a short ladder, because a resume fired the
+          // instant the page reappears lands before the system
+          // has handed the audio session back. The context's own
+          // statechange listener finishes whenever an attempt lands.
+          splRecoveryPending = true;
+          splClearTimers();
+          splTryResume();
+          [300, 900, 2000, 4000].forEach(function (d) {
+            splRecoverTimers.push(setTimeout(function () {
+              if (!ac || !splRecoveryPending || stopped) return;
+              if (ac.state === 'running') splFinish(); else splTryResume();
+            }, d));
+          });
+        }
+        document.addEventListener('visibilitychange', function () {
+          if (document.hidden) splRecoveryPending = true;
+          else recover();
+        });
+        window.addEventListener('pageshow', recover);
+        window.addEventListener('focus', recover);
+      })();
+      (function () {
+        var btn = document.getElementById('btnEnter');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+          window.__tdLoadGameFont(); // entering the game: now fetch the game font
+          if (window.__tdStopSplashMusic) window.__tdStopSplashMusic(); // the splash dance ends here…
+          if (window.__tdEnter) { window.__tdEnter(); return; }
+          window.__tdPendingEnter = true;
+          document.getElementById('splash').classList.add('gone');
+        });
+      })();
+      /* Dracula's bubble must NOT sit on the poster from the start.
+         Only once the cover art has actually loaded and the start
+         page is displayed does the bubble grow in from nothing (the
+         .show class starts the pop), with his words following one by
+         one. The window load event and a plain timer are backstops,
+         so he always gets his line out even if the image stalls. */
+      (function () {
+        var bubble = document.querySelector('.dracula-bubble');
+        if (!bubble) return;
+        var img = document.querySelector('.cover img');
+        var shown = false;
+        function show() {
+          if (shown) return;
+          if (window.__tdPreUp) { setTimeout(show, 300); return; }
+          shown = true;
+          requestAnimationFrame(function () {
+            setTimeout(function () { bubble.classList.add('show'); }, 300);
+          });
+        }
+        if (img && img.complete && img.naturalWidth > 0) show();
+        else if (img) img.addEventListener('load', show);
+        window.addEventListener('load', show);
+        setTimeout(show, 2600);
+      })();
+      /* progressive cover: the poster starts as the tiny low-res WebP
+         (a few KB — on screen almost instantly, softened by the
+         .cover-low blur). Once the splash has painted, the
+         full-resolution WebP loads in the background and swaps in
+         when it arrives; if WebP fails altogether, the original
+         JPEG takes over. */
+      (function () {
+        var img = document.querySelector('.cover img');
+        if (!img) return;
+        var full = img.getAttribute('data-full');
+        if (!full) return;
+        function swap() {
+          var pre = new Image();
+          pre.onload = function () {
+            img.src = full;
+            img.classList.remove('cover-low');
+          };
+          pre.onerror = function () {
+            img.classList.remove('cover-low');
+            if (!img.dataset.fbk) { img.dataset.fbk = 1; img.src = 'assets/splash-cover.jpg'; }
+          };
+          pre.src = full;
+        }
+        requestAnimationFrame(function () { requestAnimationFrame(swap); });
+      })();
+      /* splash cover safety net — the same pattern the victory
+         photo already has, and the poster needs it just as much:
+         every fallback in its chain above is ONE-SHOT. The inline
+         onerror trades the low-res WebP for the JPEG exactly once,
+         the progressive swap does the same when its preload fails —
+         and each sets the dataset.fbk guard the other checks — so
+         on a flaky phone connection, if the WebP fetches AND the
+         JPEG fetch all fail inside the same session, the poster is
+         a broken-image glyph for good: every handler has spent
+         itself and nothing ever tries again. This watchdog keeps
+         an eye on the poster while the start page is up: whenever
+         the <img> sits broken (fetch finished, zero natural width)
+         it re-fetches, alternating the full WebP and the JPEG with
+         a cache-busting query so a poisoned cache entry is stepped
+         around as well. It stops the moment any fetch lands, when
+         the player leaves the start page, or after a handful of
+         rounds — a genuinely offline phone is not hammered. */
+      (function () {
+        var img = document.querySelector('.cover img');
+        var splash = document.getElementById('splash');
+        if (!img || !splash) return;
+        var CANDS = ['assets/splash-cover-2.webp', 'assets/splash-cover.jpg'];
+        var tries = 0;
+        var timer = null;
+        function broken() { return img.complete && img.naturalWidth === 0; }
+        function gone() { return splash.classList.contains('gone'); }
+        function repair() {
+          if (gone() || !broken() || tries >= 6) return;
+          var url = CANDS[tries % CANDS.length];
+          tries++;
+          img.classList.remove('cover-low');
+          img.src = url + '?retry=' + tries;
+        }
+        function tick() {
+          if (gone() || img.naturalWidth > 0 || tries >= 6) { timer = null; return; }
+          repair();
+          timer = setTimeout(tick, 2500);
+        }
+        function arm(delay) {
+          if (timer) return;
+          timer = setTimeout(tick, delay);
+        }
+        img.addEventListener('error', function () { setTimeout(repair, 600); arm(1600); });
+        window.addEventListener('load', function () { setTimeout(repair, 300); arm(1200); });
+        arm(1800);
+      })();
+    </script>
+    <script>
+      /* pre-splash wiring: the first tap (or key press) anywhere on
+         the title card dismisses it and — because the splash music's
+         start runs inside this very gesture — the browser unlocks
+         audio, so the cheerful skeleton dance is already playing
+         when the START page fades in, with no second tap needed.
+         The card keeps intercepting taps until its fade finishes,
+         so the trailing click of the same tap cannot fall through
+         and hit START underneath. */
+      (function () {
+        var pre = document.getElementById('presplash');
+        if (!pre) { window.__tdPreUp = false; return; }
+        var done = false;
+        function go() {
+          if (done) return;
+          done = true;
+          window.__tdPreUp = false;
+          if (window.__tdStartSplashMusic) window.__tdStartSplashMusic();
+          pre.classList.add('gone');
+        }
+        pre.addEventListener('pointerdown', go);
+        pre.addEventListener('click', go);
+        document.addEventListener('keydown', function () { if (!done) go(); });
+      })();
+    </script>
+    <script>
+      /* boot-progress wiring for the two stages owned by this page:
+         the poster artwork and the game font. (The game-code stage
+         is reported by the engine loader at the bottom of the page,
+         and the engine stage by game.js itself once it has booted.)
+         ----- poster: the tiny low-res placeholder that paints
+         first fills the stage's first segment; the full-resolution
+         poster (or, if WebP fails, the fallback JPEG) completes it.
+         ----- font: Baloo 2 used to be fetched only when the player
+         tapped START; the loading bar has a font stage, so the fetch
+         starts now, during boot — it stays fully asynchronous and
+         nothing waits on it visually. The stage completes when the
+         Baloo 2 faces are actually usable; a failed or hung font
+         download also ends the stage, so the bar never sticks. */
+      (function () {
+        var P = window.__tdBootProgress;
+        if (!P) return;
+        var img = document.querySelector('.cover img');
+        if (img) {
+          var checkImg = function () {
+            if (!(img.naturalWidth > 0)) return;
+            var src = img.currentSrc || img.src || '';
+            if (/splash-cover-2\.webp/.test(src) || /splash-cover\.jpg/.test(src)) {
+              P.hit('art-low');
+              P.hit('art');
+            } else {
+              P.hit('art-low');
+            }
+          };
+          if (img.complete) checkImg();
+          img.addEventListener('load', checkImg);
+          img.addEventListener('error', function () { setTimeout(checkImg, 80); });
+        }
+        if (window.__tdLoadGameFont) {
+          window.__tdLoadGameFont();
+          var fontDone = function () { P.hit('font'); };
+          var armFaces = function () {
+            if (document.fonts && document.fonts.load) {
+              document.fonts.load('800 20px "Baloo 2"').then(fontDone, fontDone);
+              setTimeout(fontDone, 5000);
+            } else fontDone();
+          };
+          var css = window.__tdFontCss;
+          if (css) {
+            /* attached in the same task that started the fetch, so
+               the load event cannot slip past before we listen */
+            css.addEventListener('load', armFaces);
+            css.addEventListener('error', fontDone);
+          } else armFaces();
+          setTimeout(fontDone, 6000);
+        } else {
+          P.hit('font');
+        }
+      })();
+    </script>
+    <main class="wrap">
+      <div class="screen">
+      <div class="controls">
+        <button class="btn primary" id="btnPlay" type="button">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+          <span id="btnPlayTxt">Start Game</span>
+        </button>
+        <button class="btn" id="btnRestart" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+          Restart
+        </button>
+        <span class="spacer"></span>
+        <button class="btn on" id="btnSound" type="button" aria-pressed="true">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9c1.2 1.6 1.2 4.4 0 6M18.5 6.5c2.4 3.2 2.4 7.8 0 11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+          Sound
+        </button>
+        <button class="btn" id="btnSpeed" type="button">1× Speed</button>
+      </div>
+      <script>
+        /* speed button first-entry hint: the moment the player
+           enters the game for the first time (the splash gains
+           .gone — via the engine's __tdEnter or the splash
+           bootstrap's own fallback), the speed button blinks three
+           times, a little brighter than its resting breathing glow,
+           then settles back to breathing. One shot only: later
+           re-entries and restarts never re-trigger it. */
+        (function () {
+          var btn = document.getElementById('btnSpeed');
+          var splash = document.getElementById('splash');
+          if (!btn || !splash) return;
+          var done = false;
+          function flash() {
+            if (done) return;
+            done = true;
+            btn.classList.add('speed-intro');
+            setTimeout(function () { btn.classList.remove('speed-intro'); }, 1800);
+          }
+          if (splash.classList.contains('gone')) { flash(); return; }
+          if ('MutationObserver' in window) {
+            var mo = new MutationObserver(function () {
+              if (splash.classList.contains('gone')) {
+                mo.disconnect();
+                setTimeout(flash, 250);
+              }
+            });
+            mo.observe(splash, { attributes: true, attributeFilter: ['class'] });
+          }
+        })();
+      </script>
+
+      <div class="stagebox">
+      <div class="stage" id="stage">
+        <canvas id="game" width="900" height="1480" tabindex="0" aria-label="Game board: after picking a tower, tap any glowing gravestone to place it"></canvas>
+        <div class="skilldock" role="group" aria-label="Special skills">
+          <button class="btn skill" id="btnBomb" type="button">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><ellipse cx="24" cy="27" rx="16" ry="14" fill="#f5820d"/><ellipse cx="15" cy="27" rx="9" ry="13" fill="#e06f00"/><ellipse cx="33" cy="27" rx="9" ry="13" fill="#e06f00"/><rect x="22" y="8" width="4.5" height="6" rx="1.5" fill="#3f7a1e"/><path d="M15 22 L20 22 L17.5 26 Z M28 22 L33 22 L30.5 26 Z" fill="#431d00"/><path d="M14 31 L19 34 L22 31 L24 34 L26 31 L29 34 L34 31 L31 37 L17 37 Z" fill="#431d00"/></svg>
+            <span id="btnBombTxt">Pumpkin Bomb</span>
+          </button>
+          <button class="btn skill" id="btnScream" type="button">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M13 40 L13 23 Q13 9 24 9 Q35 9 35 23 L35 40 L29.5 35 L24 40 L18.5 35 Z" fill="#f6f2ff"/><circle cx="19" cy="22" r="2.6" fill="#241245"/><circle cx="29" cy="22" r="2.6" fill="#241245"/><ellipse cx="24" cy="29" rx="3" ry="4" fill="#241245"/></svg>
+            <span id="btnScreamTxt">Ghost Scream</span>
+          </button>
+          <button class="btn skill" id="btnRain" type="button">
+            <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="16" cy="14" r="6" fill="#ff5d8f"/><path d="M10 14 L4 10 L6 16 L4 22 Z M22 14 L28 10 L26 16 L28 22 Z" fill="#ff8fb5"/><circle cx="33" cy="12" r="5" fill="#ffb03a"/><path d="M12 28 L10 34 M22 26 L20 32 M32 28 L30 34 M40 24 L38 30" stroke="#4dc9ff" stroke-width="2.6" stroke-linecap="round"/></svg>
+            <span id="btnRainTxt">Candy Rain</span>
+          </button>
+        </div>
+        <div class="skilltip" id="skillTip" hidden>
+          <svg class="skilltip-shape" id="skillTipShape" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path id="skillTipPath" d="M 19 1 H 281 Q 299 1 299 19 V 31 Q 299 49 281 49 H 161 L 150 61 Q 149 63 148 61 L 137 49 H 19 Q 1 49 1 31 V 19 Q 1 1 19 1 Z" fill="rgba(24, 14, 54, .78)" stroke="#ff9f2e" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>
+          <span id="skillTipText"></span>
+          <button class="skillhint-x" id="skillTipClose" type="button">Got it</button>
+        </div>
+        <div class="winbanner" id="winBanner" aria-hidden="true">
+          <div class="t1">KIDS WIN!</div>
+        </div>
+        <div class="defdim" id="defDim" aria-hidden="true"></div>
+        <div class="winbanner defbanner" id="defBanner" aria-hidden="true">
+          <img class="defgroup" id="defGroupImg" src="assets/victory-group.webp" width="1200" height="1061" decoding="async" alt="" onerror="if(!this.dataset.fbk){this.dataset.fbk=1;this.src='assets/victory-group.png';}else if(this.dataset.fbk==='1'){this.dataset.fbk=2;this.src='assets/victory-group.webp?retry=1';}">
+        </div>
+        <canvas class="winfx" id="winFx" width="900" height="1480" aria-hidden="true"></canvas>
+        <button class="btn primary playagain" id="btnPlayAgain" type="button" aria-hidden="true">NEXT NIGHT</button>
+        <div class="choice" id="towerChoice" aria-hidden="true">
+          <div class="choice-t" id="choiceTitle">Choose Your Defense Monster</div>
+          <div class="choice-grid" id="choiceGrid"></div>
+        </div>
+        <div class="upanel" id="upPanel" aria-hidden="true">
+          <div class="up-t" id="upTitle">Franken Tower</div>
+          <div class="up-lv" id="upLv"></div>
+          <div class="up-stats" id="upStats"></div>
+          <div class="up-btns">
+            <button class="btn primary" id="btnUpgrade" type="button">Upgrade!</button>
+            <button class="btn" id="btnUpLater" type="button">Later</button>
+          </div>
+        </div>
+        <div class="battlereport" id="battleReport" aria-hidden="true" role="dialog" aria-label="Defeat report">
+          <div class="br-card">
+            <img class="br-art" src="assets/defeat-report.webp" width="1086" height="1448" decoding="async" alt="" />
+            <button class="br-close" id="brClose" type="button" aria-label="Close defeat report">&times;</button>
+            <canvas class="br-topface" id="brTopFace" width="244" height="232" aria-hidden="true"></canvas>
+            <div class="br-cell br-c-wave"><span class="br-lab">Wave Reached</span><b class="br-val" id="brWaves">0/10</b></div>
+            <div class="br-cell br-c-kids"><span class="br-lab">Kids Knocked</span><b class="br-val" id="brKids">0</b></div>
+            <div class="br-cell br-c-combo"><span class="br-lab">Best Combo</span><b class="br-val" id="brCombo">x0</b></div>
+            <div class="br-cell br-c-top"><span class="br-lab">Top Defender</span><b class="br-val br-val-name" id="brTop">&mdash;</b></div>
+            <div class="br-cell br-c-bomb"><span class="br-lab">Pumpkin Bomb Used</span><b class="br-val" id="brBomb">0</b></div>
+            <div class="br-bubble" id="brBubble">The kids broke through... but your monsters fought bravely!</div>
+            <div class="br-sharecard">
+              <div class="br-share-big">I survived <em id="brShareWaves">0 waves</em><br /><span class="br-share-pink">in Space 5!</span></div>
+              <div class="br-share-sub">Can you beat me?</div>
+            </div>
+            <div class="br-polaroid" aria-hidden="true">
+              <img class="br-drac" id="brDracImg" src="assets/dracula-proud.webp" width="520" height="430" decoding="async" alt="" />
+              <div class="br-drac-quote" id="brDracQuote">Not bad... for a mortal.</div>
+            </div>
+            <button class="br-hot br-hot-share" id="brShare" type="button" aria-label="Share result"></button>
+            <button class="br-hot br-hot-again" id="brPlayAgain" type="button" aria-label="Play again"></button>
+            <div class="br-linkbox" id="brLinkBox" hidden>
+              <div class="br-linkbox-t">Sharing is blocked here — copy the game link:</div>
+              <input class="br-linkbox-url" id="brLinkUrl" type="text" readonly value="" aria-label="Game link" />
+              <button class="br-linkbox-x" id="brLinkClose" type="button" aria-label="Close link box">&times;</button>
+            </div>
+          </div>
+        </div>
+        <div class="brtoast" id="brToast" hidden>Link copied! Challenge your friends!</div>
+      </div>
+      </div>
+
+      </div>
+
+    </main>
+
+    <script>
+      /* victory group photo safety net: the photo is fetched once
+         when this page first parses, long before anyone wins — if
+         that one fetch stalls or fails on a slow connection, the
+         <img> would sit broken for the whole session and the
+         CASTLE SAVED screen would come up empty. So: warm both
+         formats in the background once the page has painted (the
+         WebP right away, the PNG a few seconds later — a win is
+         minutes away, so both are cached by then), and watch the
+         victory banner: the moment it gains .show, if the photo
+         turns out broken, kick off a fresh fetch of the other
+         format right there, with one later re-check in case that
+         fetch is still in flight. */
+      (function () {
+        var img = document.getElementById('defGroupImg');
+        var banner = document.getElementById('defBanner');
+        if (!img || !banner) return;
+        var WEBP = 'assets/victory-group.webp';
+        var PNG = 'assets/victory-group.png';
+        function broken() { return img.complete && img.naturalWidth === 0; }
+        function repair() {
+          if (!broken()) return;
+          var cur = img.getAttribute('src') || '';
+          if (cur.indexOf('.png') !== -1) img.src = WEBP + '?retry=' + Date.now();
+          else img.src = PNG;
+        }
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            var pw = new Image(); pw.src = WEBP;
+            var pd = new Image(); pd.src = 'assets/defeat-report.webp';
+            /* the four Dracula polaroid portraits are tiny
+               (~20 KB each): warm them all in the background so
+               whichever one the run earns is already cached when
+               the report pops — a failed warm-up blocks nothing */
+            ['assets/dracula-laugh.webp', 'assets/dracula-nervous.webp', 'assets/dracula-smug.webp', 'assets/dracula-proud.webp'].forEach(function (u) { var pi = new Image(); pi.src = u; });
+            setTimeout(function () { var pp = new Image(); pp.src = PNG; }, 4000);
+          });
+        });
+        window.addEventListener('load', repair);
+        if ('MutationObserver' in window) {
+          var mo = new MutationObserver(function () {
+            if (banner.classList.contains('show')) {
+              repair();
+              setTimeout(repair, 600);
+              setTimeout(repair, 2000);
+            }
+          });
+          mo.observe(banner, { attributes: true, attributeFilter: ['class'] });
+        }
+      })();
+    </script>
+    <script>
+      /* the game engine now lives in its own file, assets/game.js,
+         and is fetched in the background only AFTER the splash has
+         painted - so this start page appears almost immediately
+         instead of waiting for the whole engine to download first.
+         A START tap that lands before the engine arrives is still
+         remembered by the splash bootstrap above and honoured the
+         moment the engine boots. */
+      (function () {
+        var kicked = false;
+        var attempts = 0;
+        var MAX_ATTEMPTS = 4;
+        var curScript = null;
+        function attempt() {
+          attempts++;
+          var s = document.createElement('script');
+          curScript = s;
+          /* retries carry a cache-busting query: the failure being
+             recovered from may BE a poisoned cache entry, and a
+             plain re-request would just be served the same corpse */
+          s.src = 'assets/game.js' + (attempts > 1 ? '?retry=' + (attempts - 1) : '');
+          s.async = true;
+          /* the loading bar's game-code stage: filled when the file
+             has actually downloaded and run (script load event) */
+          s.onload = function () { if (window.__tdBootProgress) window.__tdBootProgress.hit('code'); };
+          s.onerror = function () {
+            /* a failed fetch used to end the story right here: the
+               boot bar was told the code stage was done, the engine
+               never existed, and a tap on the poster's START still
+               hid the start page — dropping the player onto a bare
+               field whose Start button is wired by the very engine
+               that never arrived. (Before 2026-10-29 there was a
+               how-to overlay in between; it was removed.) Now a
+               failed load is retried a few times first; a START tap
+               the splash bootstrap already remembered is honoured by
+               the engine the moment a retry lands and it boots.
+               Only when every attempt has failed are the stages
+               closed, as before, so the bar never sticks either. */
+            if (attempts < MAX_ATTEMPTS) { setTimeout(attempt, 1200); return; }
+            if (window.__tdBootProgress) {
+              window.__tdBootProgress.hit('code');
+              window.__tdBootProgress.hit('engine');
+            }
+          };
+          document.body.appendChild(s);
+        }
+        function loadGame() {
+          if (kicked) return;
+          kicked = true;
+          attempt();
+        }
+        // two frames: let the splash visibly paint first, then load
+        // the engine while the player is looking at the poster
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            if ('requestIdleCallback' in window) requestIdleCallback(loadGame, { timeout: 1200 });
+            else setTimeout(loadGame, 60);
+          });
+        });
+        setTimeout(loadGame, 2500); // backstop if frames/idle never fire
+        /* manual retry, used by the engine watchdog below: drops the
+           (possibly stalled) script tag — removing it cancels an
+           in-flight fetch — and starts a fresh load. If the engine
+           made it after all, this is a no-op. The engine's own
+           __tdBooted guard makes a racing double-boot impossible. */
+        window.__tdRetryEngine = function () {
+          if (typeof window.__tdEnter === 'function') return;
+          if (curScript && curScript.parentNode) curScript.parentNode.removeChild(curScript);
+          curScript = null;
+          kicked = false;
+          attempts = 0;
+          loadGame();
+        };
+      })();
+    </script>
+    <script>
+      /* engine watchdog: the top Start button is wired by the engine
+         (game.js). If the engine file never arrives — flaky network,
+         exhausted retries, a stalled download that fires neither load
+         nor error — the player lands on a bare field with a dead Start
+         button and no clue. (The how-to overlay was removed 2026-10-29;
+         START on the splash now drops straight into the game.) This
+         self-contained watcher (no engine needed) notices: once the
+         splash is dismissed, if __tdEnter still isn't there after a
+         few seconds, it turns the top Start button into a visible
+         retry instead of a dead end. */
+      (function () {
+        var splash = document.getElementById('splash');
+        var stage = document.getElementById('stage');
+        var btnPlay = document.getElementById('btnPlay');
+        var btnPlayTxt = document.getElementById('btnPlayTxt');
+        if (!splash || !stage || !btnPlay) return;
+        var warned = false;
+        function engineReady() { return typeof window.__tdEnter === 'function'; }
+        function showRetry() {
+          if (warned || engineReady()) return;
+          warned = true;
+          var note = document.createElement('div');
+          note.className = 'engine-retry-note';
+          note.textContent = 'The game didn\u2019t finish loading (slow connection). Tap RETRY to load it again — nothing is lost.';
+          stage.appendChild(note);
+          if (btnPlayTxt) btnPlayTxt.textContent = '\u21BB Retry';
+        }
+        function arm(ms) {
+          if (engineReady()) return;
+          setTimeout(showRetry, ms || 6000);
+        }
+        btnPlay.addEventListener('click', function (e) {
+          /* the engine's own start handler is registered in the same
+             synchronous boot that sets __tdEnter, so: engine here =>
+             its handler exists and does the real start; engine missing
+             => no other listener exists and this retry owns the tap. */
+          if (engineReady()) return;
+          if (!warned) return;
+          e.preventDefault();
+          if (window.__tdRetryEngine) window.__tdRetryEngine();
+          if (btnPlayTxt) btnPlayTxt.textContent = 'Loading\u2026';
+          warned = false;
+          arm(9000); // this attempt may die too — offer the retry again
+        });
+        /* late arrival: if the engine shows up after the warning went
+           out, quietly remove the note and restore the button label */
+        var tidy = setInterval(function () {
+          if (!engineReady()) return;
+          clearInterval(tidy);
+          var note = stage.querySelector('.engine-retry-note');
+          if (note && note.parentNode) note.parentNode.removeChild(note);
+          if (warned) {
+            warned = false;
+            if (btnPlayTxt && btnPlayTxt.textContent.indexOf('Retry') !== -1) btnPlayTxt.textContent = 'Start Game';
+          }
+        }, 1000);
+        if (splash.classList.contains('gone')) { arm(); return; }
+        if ('MutationObserver' in window) {
+          var mo = new MutationObserver(function () {
+            if (splash.classList.contains('gone')) { mo.disconnect(); arm(); }
+          });
+          mo.observe(splash, { attributes: true, attributeFilter: ['class'] });
+        } else {
+          setTimeout(function () { arm(10000); }, 1000);
+        }
+      })();
+    </script>
+  </body>
+</html>
