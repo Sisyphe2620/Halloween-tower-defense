@@ -1683,12 +1683,14 @@
         color: var(--ink-dim);
       }
       /* ---------- the loading bar IS a scene now: a queue of
-         trick-or-treat kids walks the orange path to the castle.
+         trick-or-treat kids walks the orange path to a lone
+         freestanding door (the castle that used to stand here
+         was removed at the user's request — just the door now).
          The boot-progress script moves #bootKids and stretches
          #bootRoadFill with the SAME eased percentage as the
          number, so how far the kids have walked is exactly how
          much has loaded. At 100% the script adds .knocking: the
-         ghost leader's arm knocks, the castle door shakes and a
+         ghost leader's arm knocks, the door shakes and a
          KNOCK! burst pops, then the screen fades as before.
          The kids bob as they walk (staggered delays so the queue
          ripples instead of bouncing in lockstep) ---------- */
@@ -1769,51 +1771,30 @@
                bright orange behind them as the loading advances -->
           <rect x="4" y="94" width="288" height="13" rx="6.5" fill="#59331a" />
           <rect id="bootRoadFill" x="4" y="94" width="0" height="13" rx="6.5" fill="url(#bootRoadGrad)" />
-          <!-- the castle at the end of the path: a WIDE base wall
-               (x 264–336) with a central keep rising from it and a
-               turret at each corner, centred on the door at x 300.
-               The old castle was 52 wide against 95 tall — a skinny
-               sliver squeezed against the right edge, its side
-               towers 11px sticks and its purple roofs lost against
-               the purple sky. The new silhouette is ~78 wide
-               (roof overhangs included) against ~95 tall, the roofs
-               overhang their walls by 3–4px on every side, wear a
-               bright lavender rim (stroke-width 2) and a lighter
-               violet fill, and sit in front of a soft moon halo so
-               the roofline reads at a glance. The road still ends
-               exactly at the door (x 292), and the queue's final
-               stop moved with the door (leader at x 288, see the
-               boot-progress script) so the knock still lands on it -->
+          <!-- at the end of the path there is now JUST a door —
+               no castle at all (the user asked for it gone: two
+               redraws of the castle still didn't look right, so
+               the scene keeps only the one thing the queue is
+               walking to). A single freestanding arched door in a
+               slim stone frame, centred on x 300 exactly where the
+               castle door stood, so nothing else moves: the road
+               still ends at the door (x 292), the queue's final
+               stop is unchanged (leader at x 288, see the
+               boot-progress script) and the knock still lands on
+               the door, which still shakes via .castle-door -->
           <g>
-            <circle cx="300" cy="34" r="30" fill="#ffc95e" opacity=".13" />
-            <rect x="264" y="66" width="72" height="41" fill="#2a1c55" stroke="#6b54b8" stroke-width="1.8" />
-            <rect x="282" y="38" width="36" height="69" fill="#2a1c55" stroke="#6b54b8" stroke-width="1.8" />
-            <rect x="264" y="54" width="15" height="53" fill="#2a1c55" stroke="#6b54b8" stroke-width="1.8" />
-            <rect x="321" y="54" width="15" height="53" fill="#2a1c55" stroke="#6b54b8" stroke-width="1.8" />
-            <polygon points="261,54 271.5,35 282,54" fill="#6d4fc2" stroke="#c9b8ff" stroke-width="2" stroke-linejoin="round" />
-            <polygon points="318,54 328.5,35 339,54" fill="#6d4fc2" stroke="#c9b8ff" stroke-width="2" stroke-linejoin="round" />
-            <polygon points="278,38 300,11 322,38" fill="#6d4fc2" stroke="#c9b8ff" stroke-width="2" stroke-linejoin="round" />
-            <path d="M300 11 L286 35" stroke="#a78bfa" stroke-width="1.6" stroke-linecap="round" fill="none" />
-            <circle cx="271.5" cy="33.4" r="2.5" fill="#ffd23e" stroke="#b97f06" stroke-width="1" />
-            <circle cx="328.5" cy="33.4" r="2.5" fill="#ffd23e" stroke="#b97f06" stroke-width="1" />
-            <circle cx="300" cy="9.2" r="2.8" fill="#ffd23e" stroke="#b97f06" stroke-width="1" />
-            <rect x="288" y="49" width="6.5" height="9.5" rx="2" fill="#ffd23e" />
-            <rect x="305.5" y="49" width="6.5" height="9.5" rx="2" fill="#ffd23e" />
-            <circle cx="271.5" cy="63" r="2.4" fill="#ffd23e" />
-            <circle cx="328.5" cy="63" r="2.4" fill="#ffd23e" />
+            <path d="M284 107 L284 82 Q284 66 300 66 Q316 66 316 82 L316 107 Z" fill="#3a2a75" stroke="#6b54b8" stroke-width="2" stroke-linejoin="round" />
             <g class="castle-door">
-              <path d="M292 107 L292 84 Q292 76 300 76 Q308 76 308 84 L308 107 Z" fill="#ff9f2e" stroke="#7a3c00" stroke-width="1.6" />
-              <circle cx="304.5" cy="93" r="1.8" fill="#7a3c00" />
+              <path d="M289 107 L289 83 Q289 71 300 71 Q311 71 311 83 L311 107 Z" fill="#ff9f2e" stroke="#7a3c00" stroke-width="1.6" />
+              <path d="M295.5 74.5 L295.5 107 M304.5 74.5 L304.5 107" stroke="#e07f16" stroke-width="1.3" fill="none" />
+              <circle cx="307" cy="92" r="1.9" fill="#7a3c00" />
             </g>
-            <circle cx="285" cy="103" r="4" fill="#ff8a1e" />
-            <rect x="284" y="97.5" width="2" height="3" fill="#3f9e4d" />
-            <circle cx="315" cy="103" r="4" fill="#ff8a1e" />
-            <rect x="314" y="97.5" width="2" height="3" fill="#3f9e4d" />
+            <rect x="280" y="107" width="40" height="3.4" rx="1.7" fill="#4b3585" />
           </g>
           <!-- the knock burst: hidden until the queue arrives -->
           <g class="knock-fx">
-            <text x="248" y="24" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-size="14" font-weight="800" fill="#ffd23e" stroke="#2b1050" stroke-width="3" paint-order="stroke" letter-spacing="1">KNOCK!</text>
-            <path d="M290 70 l-7 -4 M292 66 l-4 -7 M297 64 l-1 -8" stroke="#ffd23e" stroke-width="2.2" stroke-linecap="round" fill="none" />
+            <text x="250" y="52" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-size="14" font-weight="800" fill="#ffd23e" stroke="#2b1050" stroke-width="3" paint-order="stroke" letter-spacing="1">KNOCK!</text>
+            <path d="M288 74 l-7 -4 M290 70 l-4 -7 M295 68 l-1 -8" stroke="#ffd23e" stroke-width="2.2" stroke-linecap="round" fill="none" />
           </g>
           <!-- the trick-or-treat queue: skeleton, pumpkin, witch,
                and the ghost leader who does the knocking. The
@@ -1912,7 +1893,7 @@
             finishStarted = true;
             shown = 100;
             render();
-            /* 100%: the queue has reached the castle — give the
+            /* 100%: the queue has reached the door — give the
                knock its moment (the .knocking CSS shakes the door,
                swings the leader's arm and pops the KNOCK! burst)
                before the screen fades to the tap page */
