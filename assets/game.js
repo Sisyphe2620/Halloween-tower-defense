@@ -1015,8 +1015,47 @@
       scarecrow: { nm: 'Scarecrow Tower', cost: 95,  range: 110, rate: 2.0,  dmg: 8,  proj: 'crow' },
       zombie:    { nm: 'Zombie Tower',    cost: 70,  range: 150, rate: 1.6,  dmg: 10, proj: 'arm' },
       werewolf:  { nm: 'Werewolf Tower',  cost: 110, range: 120, rate: 12,   dmg: 0,  proj: 'howl' },
-      slime:     { nm: 'Slime Tower',     cost: 90,  range: 108, rate: 3.0,  dmg: 8,  proj: 'goo' }
+      slime:     { nm: 'Slime Tower',     cost: 90,  range: 108, rate: 3.0,  dmg: 8,  proj: 'goo' },
+      /* wizard-fusion hybrids (see WIZARD_FUSIONS below): never on
+         a card, never in a roster — a hybrid only exists because
+         two different Lv3 towers fused into it. Its base numbers
+         follow the fusion rulebook: damage = the higher parent's
+         x1.2, fire interval = the faster parent's, range = the
+         longer parent's — then the normal Lv3 scaling (x3.24
+         damage etc.) applies on top, exactly as it did to the
+         parents. 电弧幽灵's interval is the ghost's (1.1), which
+         is also the faster of its two parents. */
+      toxwitch:   { nm: '毒网魔女',   cost: 0, range: 112, rate: 2.2,    dmg: 9.6,  proj: 'toxweb' },
+      arcghost:   { nm: '电弧幽灵',   cost: 0, range: 106, rate: 1.1,    dmg: 21.6, proj: 'arcbolt' },
+      corromummy: { nm: '腐蚀木乃伊', cost: 0, range: 108, rate: 1.75,   dmg: 9.6,  proj: 'corrovortex' }
     };
+    /* ---------------- wizard fusion pairs ----------------
+       Two DIFFERENT Lv3 towers fuse into one hybrid (the wizard
+       fusion — separate from the same-kind SUPER fusion below):
+       the hybrid keeps BOTH parents' Lv3 ultimates at x1.2 and
+       can never fuse again. First batch: three pairs. */
+    var WIZARD_FUSIONS = [
+      { a: 'witch',   b: 'spider',  kind: 'toxwitch',   nm: '毒网魔女' },
+      { a: 'franken', b: 'ghost',   kind: 'arcghost',   nm: '电弧幽灵' },
+      { a: 'mummy',   b: 'slime',   kind: 'corromummy', nm: '腐蚀木乃伊' }
+    ];
+    function wizardDefFor(kindA, kindB) {
+      for (var i = 0; i < WIZARD_FUSIONS.length; i++) {
+        var d = WIZARD_FUSIONS[i];
+        if ((d.a === kindA && d.b === kindB) || (d.a === kindB && d.b === kindA)) return d;
+      }
+      return null;
+    }
+    /* ---------------- shop ----------------
+       The shop spends the SAME points pool as picks: the spendable
+       balance is picks x PICK_EVERY + prog, and paying points can
+       cost the player a banked pick (see spendPoints). Unlocks for
+       the rest of the run once the balance first reaches 20. */
+    var SHOP_UNLOCK = 20;        // points balance that unlocks the shop
+    var SHOP_TOWER_COST = 20;    // one off-roster tower
+    var SHOP_REPAIR_COST = 15;   // castle repair…
+    var SHOP_REPAIR_HP = 30;     // …for this much HP (never above HOUSE_MAX)
+    var SHOP_REFRESH_COST = 10;  // all three skills ready at once
     var WEB_TIME = [2.5, 3.0, 3.5], WEB_SLOW = [0.35, 0.30, 0.25], WEB_SPLASH = [36, 42, 48]; // spider web, per level
     var CROW_DUR = [4, 4.5, 5];                                    // scarecrow crow ride, per level
     var ARM_LEN = 140;                                             // zombie arm throw distance (range grows it per level)
@@ -1084,9 +1123,9 @@
        levelled at wave 5 (see doUpgrade + twWaveBonus) — maxing
        everything early no longer ends the game, and the wave
        bonus stacks with the SUPER fusion multiplier below. */
-    var PICK_EVERY = 15;              // points (kids chased away) per banked pick
+    var PICK_EVERY = 12;              // points (kids chased away) per banked pick
     var LVL_DMG = [1, 1.8, 3.24];
-    var WAVE_UPGRADE_BONUS = 0.04;    // per-wave bonus on each upgrade (see doUpgrade)
+    var WAVE_UPGRADE_BONUS = 0.02;    // per-wave bonus on each upgrade (see doUpgrade)
     // SUPER fusion: two identical Lv3 towers fuse into one SUPER
     // tower (see doFuse). A SUPER tower hits 1.5x as hard, fires
     // 15% faster, reaches 10% further, and every number of its
@@ -1298,7 +1337,7 @@
        knocking kid standing inside the round plaza (isPlazaKnocker).
        There is deliberately NO range stat: the plaza test replaces
        it, so no shot can ever reach a kid out on the road */
-    var HOUSE_CANNON = { x: 225, y: 109, rate: 0.8, dmg: 8 };
+    var HOUSE_CANNON = { x: 225, y: 109, rate: 0.8, dmg: 12 };
     /* pumpkin bomb skill: tap the button to arm it, then tap the road —
        a pumpkin drops there and bursts into candy with splash damage */
     var BOMB_CD = 12, BOMB_RADIUS = 80, BOMB_DMG = 30, BOMB_FALL = 0.45;
@@ -1418,6 +1457,9 @@
         kills: 0,                // kids driven away, total
         prog: 0,                 // points toward the next pick (1 per kid chased away)
         picks: 0,                // banked picks (each = one placement or one upgrade)
+        shopUnlocked: false,     // shop: balance reached SHOP_UNLOCK once this run
+        shopBought: {},          // shop: off-roster kinds already bought this wave
+        shopStockWave: 0,        // shop: the wave the bought-set belongs to
         healKills: 0,            // endless-only: kills toward the next +1 castle repair (10 kills = +1 HP)
         pickMode: null,          // how the open picker was reached: null | 'free' | 'place'
         freePickDone: false,     // the free first-tower picker has popped
@@ -1494,6 +1536,10 @@
       if (pa0) { pa0.classList.remove('show'); pa0.setAttribute('aria-hidden', 'true'); }
       var ch0 = document.getElementById('towerChoice');
       if (ch0) { ch0.classList.remove('show'); ch0.setAttribute('aria-hidden', 'true'); }
+      var sh0 = document.getElementById('shopPanel');
+      if (sh0) { sh0.classList.remove('show'); sh0.setAttribute('aria-hidden', 'true'); }
+      var wz0 = document.getElementById('wizardChoice');
+      if (wz0) { wz0.classList.remove('show'); wz0.setAttribute('aria-hidden', 'true'); }
       var mc0 = document.getElementById('modeChoice');
       if (mc0) { mc0.classList.remove('show'); mc0.setAttribute('aria-hidden', 'true'); }
       syncHUD(true);
@@ -1525,10 +1571,10 @@
       // top of that — and from wave 10 on by 1.6 instead — EVERY
       // kind alike, the two speedsters included; waves 1–4 settle
       // exactly as before
-      var hpGrowth = runMode === 'endless' ? Math.pow(1.065, wv - 1) : (wv <= 14 ? Math.pow(1.05, wv - 1) : Math.pow(1.05, 13) * Math.pow(1.025, wv - 14));
+      var hpGrowth = runMode === 'endless' ? Math.pow(1.065, wv - 1) : (wv <= 14 ? Math.pow(1.04, wv - 1) : Math.pow(1.04, 13) * Math.pow(1.025, wv - 14));
       var khp = Math.round(def.hp * hpGrowth) + Math.random() * 6;
-      if (wv >= 10) khp *= 1.6;
-      else if (wv >= 5) khp *= 1.5;
+      if (wv >= 10) khp *= 1.4;
+      else if (wv >= 5) khp *= 1.25;
       // road-speed step bonus (see the `speed` note below): the
       // +0.9 step every two waves up to wave 14, halved to +0.45
       // a step for the steps past wave 14
@@ -1581,7 +1627,7 @@
         // This `speed` drives ONLY the march down the road: fleeing
         // back (FLEE_SPEED) and walking to a knocking slot in the
         // plaza (its own fixed pace) are separate and unchanged.
-        speed: (42 + Math.random() * 10 + speedBonus) * (def.spd || (1 - tier * 0.008)) * (wv >= 10 ? 1.3 : 1) * (runMode === 'endless' ? Math.pow(1.035, wv - 1) : 1),
+        speed: (42 + Math.random() * 10 + speedBonus) * (def.spd || (1 - tier * 0.008)) * (wv >= 10 ? 1.15 : 1) * (runMode === 'endless' ? Math.pow(1.035, wv - 1) : 1),
         hp: khp, hpMax: khp,
         x: (atDist != null ? pointAt(Math.max(0, atDist)).x : PATH[0][0]), y: (atDist != null ? pointAt(Math.max(0, atDist)).y : PATH[0][1]),
         mode: 'walk',            // walk | toSlot | knock | happy | cheer
@@ -1620,17 +1666,17 @@
        and when the float is destroyed they jump out at its
        position as normal kids of the wave (see damageKid).
        Destroying the float itself counts as one kill, like any kid. */
-    var BOSS_HP_MULT = 12, BOSS_ARMOR = 0.5, BOSS_SPEED = 0.6, BOSS_KNOCK = 5;
+    var BOSS_HP_MULT = 8, BOSS_ARMOR = 0.5, BOSS_SPEED = 0.6, BOSS_KNOCK = 5;
     function bossCarried(wv) { return 5 + 3 * (Math.floor(wv / 10) - 1); }
     function spawnBoss() {
       var wv = state.wave;
       // the float's HP mirrors spawnKid's wave scaling (keep in
       // sync): robot base HP (114, the toughest kind) x the wave
       // growth x the wave jump, then 12x
-      var hpGrowth = runMode === 'endless' ? Math.pow(1.065, wv - 1) : (wv <= 14 ? Math.pow(1.05, wv - 1) : Math.pow(1.05, 13) * Math.pow(1.025, wv - 14));
+      var hpGrowth = runMode === 'endless' ? Math.pow(1.065, wv - 1) : (wv <= 14 ? Math.pow(1.04, wv - 1) : Math.pow(1.04, 13) * Math.pow(1.025, wv - 14));
       var khp = Math.round(114 * hpGrowth) + Math.random() * 6;
-      if (wv >= 10) khp *= 1.6;
-      else if (wv >= 5) khp *= 1.5;
+      if (wv >= 10) khp *= 1.4;
+      else if (wv >= 5) khp *= 1.25;
       var bossHP = Math.round(khp * BOSS_HP_MULT);
       // the float lumbers at 0.6x the wave's road pace (same
       // stepping + wave-10 x1.3 + endless compounding as a normal
@@ -2500,7 +2546,7 @@
         // bursts, spraying poison damage at the kids around it —
         // and a kid the burst kills bursts in turn, up to the
         // chain cap (plagueDepth is the live recursion guard)
-        if (isPoison && src && src.kind === 'witch' && src.level === 3 && plagueDepth < (src.super ? superCount(src, PLAGUE_CHAIN) : PLAGUE_CHAIN)) {
+        if (isPoison && src && (src.kind === 'witch' || src.kind === 'toxwitch') && src.level === 3 && plagueDepth < (src.super ? superCount(src, PLAGUE_CHAIN) : PLAGUE_CHAIN)) {
           plagueDepth++;
           plagueBurst(k, src);
           plagueDepth--;
@@ -2588,6 +2634,21 @@
           o.webF = p.webF || WEB_SLOW[0];
         });
         addFloat(k.x, k.y - 46, 'WEBBED!', '#d9d2f0', 13);
+      } else if (p.kind === 'toxweb') {
+        // 毒网魔女: the web splash lands exactly like the spider's —
+        // everyone caught is wrapped up and crawls — AND a poison
+        // mist blooms at the landing point, so kids held in the
+        // web keep taking poison damage while they struggle
+        damageKid(k, p.dmg, src);
+        state.webs.push({ x: k.x, y: k.y - 2, r: p.webR || WEB_SPLASH[0], t: 0, life: p.webT || WEB_TIME[0] });
+        state.kids.forEach(function (o) {
+          if (o.mode !== 'walk') return;
+          if (Math.hypot(o.x - k.x, (o.y - 12) - (k.y - 12)) > (p.webR || WEB_SPLASH[0])) return;
+          o.webTimer = Math.max(o.webTimer, p.webT || WEB_TIME[0]);
+          o.webF = p.webF || WEB_SLOW[0];
+        });
+        state.poisons.push({ x: k.x, y: k.y - 4, r: p.poisR || POISON_R, t: 0, dur: POISON_DUR, dps: p.poisDps || POISON_DPS, slowF: 0.72, src: src });
+        addFloat(k.x, k.y - 46, 'TOXIC WEB!', '#b78cff', 13);
       } else if (p.kind === 'goo') {
         // slime goo: TWO things land at once — a small direct sting
         // (the ball's own damage: the kid's HP drops a little on
@@ -2707,22 +2768,34 @@
       if (!tgt) { tw.cd = 0.2; return; }
       tw.cd = fireRate(tw, lvI);
       tw.throwT = THROW_DUR;
-      if (tw.proj === 'web') {
+      if (tw.proj === 'web' || tw.proj === 'toxweb') {
+        // 毒网魔女 fires the spider's web with the witch's poison
+        // folded in: every spider number runs at x1.2 (the fusion
+        // rule for kept ultimates), and its giant net poisons too
+        var isTox = tw.proj === 'toxweb';
+        var toxMult = isTox ? 1.2 : superMult(tw);
         if (tw.level === 3 && (tw.netCd || 0) <= 0) {
           // Lv3 giant net: one big net laid flat on the road — every
           // kid that steps into it is snared and dragged back
           // (the snare and drag tick in the update/kid loops).
           // The giant net only comes out once every NET_CD seconds;
           // between giants the spider throws its small webs as usual
-          state.netZones.push({ x: tgt.x, y: tgt.y - 2, r: NET_R * superMult(tw), t: 0, dur: NET_DUR * superMult(tw), slowF: tw.super ? 0.20 : NET_SLOW, src: tw, seed: Math.random() });
-          addFloat(tgt.x, tgt.y - 40, 'NET!', '#cfe8ff', 13);
-          tw.netCd = superCd(tw, NET_CD);
+          var nzObj = { x: tgt.x, y: tgt.y - 2, r: NET_R * toxMult, t: 0, dur: NET_DUR * toxMult, slowF: isTox ? 0.25 : (tw.super ? 0.20 : NET_SLOW), src: tw, seed: Math.random() };
+          if (isTox) nzObj.poisonDps = POISON_DPS * 1.75 * 1.2 * twWaveBonus(tw);
+          state.netZones.push(nzObj);
+          addFloat(tgt.x, tgt.y - 40, isTox ? 'TOXIC NET!' : 'NET!', isTox ? '#b78cff' : '#cfe8ff', 13);
+          tw.netCd = isTox ? NET_CD / 1.2 : superCd(tw, NET_CD);
         } else {
-          state.projs.push({
-            x: tw.x, y: tw.y - 26, tx: tgt, kind: 'web', color: '#e8e4f5',
+          var webPr = {
+            x: tw.x, y: tw.y - 26, tx: tgt, kind: isTox ? 'toxweb' : 'web', color: '#e8e4f5',
             speed: 300, dmg: dmg, t: 0, src: tw, psize: LVL_PROJ[lvI],
-            webT: WEB_TIME[lvI] * superMult(tw), webF: tw.super ? 0.20 : WEB_SLOW[lvI], webR: WEB_SPLASH[lvI] * superMult(tw)
-          });
+            webT: WEB_TIME[lvI] * toxMult, webF: isTox ? 0.22 : (tw.super ? 0.20 : WEB_SLOW[lvI]), webR: WEB_SPLASH[lvI] * toxMult
+          };
+          if (isTox) {
+            webPr.poisR = [30, 38, 46][lvI] * 1.2;
+            webPr.poisDps = POISON_DPS * [1, 1.35, 1.75][lvI] * 1.2 * twWaveBonus(tw);
+          }
+          state.projs.push(webPr);
         }
       } else if (tw.proj === 'goo') {
         // Lv3 acid pool: bigger, meaner, stickier — and it eats
@@ -3233,10 +3306,12 @@
           // whether or not its paw balls are ready to fly
           if (tw.kind === 'cat' && tw.level === 3 && !tw.pounce) tw.pounceCd = (tw.pounceCd == null ? 3 : tw.pounceCd) - dt;
           // a Lv3 ghost's mini-ghost clock ticks the same way
-          if (tw.kind === 'ghost' && tw.level === 3 && (tw.miniCd || 0) > 0) tw.miniCd -= dt;
+          // (电弧幽灵 keeps the ghost's carriers, so its clock ticks too)
+          if ((tw.kind === 'ghost' || tw.proj === 'arcbolt') && tw.level === 3 && (tw.miniCd || 0) > 0) tw.miniCd -= dt;
           // a Lv3 spider's giant-net clock ticks on its own rhythm,
           // whether or not its web spray is ready to fly
-          if (tw.kind === 'spider' && tw.level === 3 && (tw.netCd || 0) > 0) tw.netCd -= dt;
+          // (毒网魔女 keeps the spider's giant net, same deal)
+          if ((tw.kind === 'spider' || tw.proj === 'toxweb') && tw.level === 3 && (tw.netCd || 0) > 0) tw.netCd -= dt;
           if (tw.cd > 0) return;
           // a werewolf out on its pounce cannot howl mid-maul: its
           // howl clock simply waits until it is back on its stone
@@ -3254,7 +3329,8 @@
           var range = tw.range * (1 + 0.1 * lvI) * (tw.super ? SUPER_RANGE : 1);
           // the six rotating towers fire their own way entirely
           if (tw.proj === 'web' || tw.proj === 'sonic' || tw.proj === 'crow' ||
-              tw.proj === 'arm' || tw.proj === 'howl' || tw.proj === 'goo') {
+              tw.proj === 'arm' || tw.proj === 'howl' || tw.proj === 'goo' ||
+              tw.proj === 'toxweb') {
             fireSpecial(tw, lvI, range);
             return;
           }
@@ -3286,7 +3362,7 @@
             tw.cd = fireRate(tw, lvI); // level trims the interval; a werewolf howl nearby trims it further
             tw.throwT = THROW_DUR; // monster plays its candy-throw motion
             var dmg = tw.dmg * LVL_DMG[lvI] * twWaveBonus(tw) * superMult(tw);
-            if (tw.proj === 'vortex') {
+            if (tw.proj === 'vortex' || tw.proj === 'corrovortex') {
               // mummy: a swirling sand vortex chases the furthest kid
               // in range — at Lv3 a second one blows out at another kid
               // (a SUPER mummy blows out a third)
@@ -3301,13 +3377,31 @@
               // Lv3 sandstorm: a much bigger whirlwind that also
               // blows kids back down the road (see the kid loop)
               var isStorm = tw.level === 3;
+              // 腐蚀木乃伊: the mummy's whirlwind at x1.2 (the fusion
+              // rule for kept ultimates), flagged melt — kids caught
+              // in it lose half their armour (see the vortex loop)
+              var isCorro = tw.proj === 'corrovortex';
+              var corroMult = isCorro ? 1.2 : 1;
               vTargets.forEach(function (vt) {
                 state.vortexes.push({
-                  x: tw.x, y: tw.y - 26, tx: vt, r: isStorm ? STORM_R * superMult(tw) : VORT_R[lvI],
-                  dps: VORT_DPS[lvI] * twWaveBonus(tw) * superMult(tw), slowF: VORT_SLOW, t: 0,
-                  life: VORT_LIFE[lvI] * superMult(tw), src: tw, seed: Math.random(), storm: isStorm
+                  x: tw.x, y: tw.y - 26, tx: vt, r: isStorm ? STORM_R * superMult(tw) * corroMult : VORT_R[lvI],
+                  dps: VORT_DPS[lvI] * twWaveBonus(tw) * superMult(tw) * corroMult, slowF: VORT_SLOW, t: 0,
+                  life: VORT_LIFE[lvI] * superMult(tw) * corroMult, src: tw, seed: Math.random(), storm: isStorm, melt: isCorro
                 });
               });
+              // …and the slime parent's gift: each volley also
+              // splats a sticky puddle where the lead whirlwind
+              // lands — goo numbers at x1.2, like the acid pool's
+              // slow but without the acid's full armour strip
+              if (isCorro && vTargets.length) {
+                var cvt = vTargets[0];
+                state.slimePuddles.push({
+                  x: cvt.x, y: cvt.y - 2, r: SLIME_PUDDLE_R[lvI] * 1.2,
+                  t: 0, dur: SLIME_PUDDLE_DUR,
+                  dps: SLIME_PUDDLE_DPS * [1, 1.4, 1.9][lvI] * 1.2 * twWaveBonus(tw),
+                  slowF: ACID_SLOW, src: tw, seed: Math.random() * 10, acid: false
+                });
+              }
               // Lv3 sandstorm balance (2026-11-06): at Lv3 every
               // attack is a storm, and the normal interval (1.75s
               // base x 0.85^2 = ~1.26s) fired the ultimate far too
@@ -3379,7 +3473,9 @@
               var np = 1;
               // Lv3 franken: THREE bolts at three different kids
               // at once — a real lightning storm
-              if (tw.proj === 'bolt' && tw.level === 3) np = tw.super ? 5 : 3;
+              // (电弧幽灵 keeps that storm: it IS its franken parent
+              // at Lv3, so it throws the same three bolts)
+              if ((tw.proj === 'bolt' || tw.proj === 'arcbolt') && tw.level === 3) np = tw.super ? 5 : 3;
               // Lv3 black cat sometimes bats out a second paw ball
               else if (tw.proj === 'ball' && tw.level === 3 && Math.random() < (tw.super ? 0.6 : 0.35)) np = 2;
               var usedTgts = [best];
@@ -3396,14 +3492,35 @@
                   if (alt) { tgt = alt; usedTgts.push(alt); }
                 }
                 var pr = {
-                  x: tw.x, y: tw.y - 26, tx: tgt, kind: tw.proj,
+                  x: tw.x, y: tw.y - 26, tx: tgt, kind: tw.proj === 'arcbolt' ? 'bolt' : tw.proj,
                   color: CANDY_COLORS[Math.floor(Math.random() * CANDY_COLORS.length)],
                   speed: 265, dmg: dmg, t: 0, src: tw, psize: LVL_PROJ[lvI]
                 };
                 if (tw.proj === 'bolt') { pr.chain = tw.super ? 6 : [2, 3, 4][lvI]; pr.stun = (tw.super ? 3 : tw.level === 3 ? 2 : [0.7, 0.95, 1.2][lvI]); }
+                // 电弧幽灵: the chain jumps to 4 kids, at x1.2 like
+                // every kept ultimate — 5 jumps, a 2.4s stun
+                if (tw.proj === 'arcbolt') { pr.chain = 5; pr.stun = 2.4; }
                 if (tw.proj === 'potion') { pr.poisR = tw.super ? 69 : [30, 38, 46][lvI]; pr.poisDps = POISON_DPS * [1, 1.35, 1.75][lvI] * twWaveBonus(tw) * superMult(tw); pr.slowF = tw.super ? 0.45 : [0.72, 0.64, 0.56][lvI]; }
                 if (tw.proj === 'ball') { pr.critC = [0.3, 0.4, 0.5][lvI]; }
                 state.projs.push(pr);
+              }
+              // 电弧幽灵's ghost parent's ultimate, kept at x1.2:
+              // every few seconds little white ghosts fly out and
+              // carry kids back down the road — four of them, a
+              // longer carry, a shorter wait than the ghost's own
+              if (tw.proj === 'arcbolt' && tw.level === 3 && (tw.miniCd || 0) <= 0) {
+                tw.miniCd = MINI_GHOST_CD / 1.2;
+                var agTargets = [];
+                state.kids.forEach(function (k) {
+                  if (k.mode !== 'walk') return;
+                  var d = Math.hypot(k.x - tw.x, k.y - tw.y);
+                  if (d < range) agTargets.push(k);
+                });
+                agTargets.sort(function (a, b) { return b.dist - a.dist; });
+                agTargets.slice(0, 4).forEach(function (mk) {
+                  state.miniGhosts.push({ k: mk, t: 0, dur: MINI_GHOST_DUR * 1.2, src: tw, seed: Math.random() * 6 });
+                  addFloat(mk.x, mk.y - 44, 'BOO!', '#f6f2ff', 12);
+                });
               }
             }
             popSound();
@@ -3664,6 +3781,10 @@
           if (Math.hypot(k.x - nz.x, (k.y - 12) - nz.y) < nz.r) {
             k.webTimer = Math.max(k.webTimer, 0.35);
             k.webF = nz.slowF;
+            // 毒网魔女's giant net is laced with poison: kids held
+            // in it keep taking poison damage (isPoison, so a kill
+            // inside the net can still set off her plague burst)
+            if (nz.poisonDps) damageKid(k, nz.poisonDps * dt, nz.src, false, true);
           }
         });
       }
@@ -3679,7 +3800,14 @@
         if (vdd > 4) { vx.x += vdx / vdd * Math.min(vstep, vdd); vx.y += vdy / vdd * Math.min(vstep, vdd); }
         state.kids.forEach(function (k) {
           if (k.mode !== 'walk') return;
-          if (Math.hypot(k.x - vx.x, (k.y - 12) - vx.y) < vx.r) damageKid(k, vx.dps * dt, vx.src);
+          if (Math.hypot(k.x - vx.x, (k.y - 12) - vx.y) < vx.r) {
+            damageKid(k, vx.dps * dt, vx.src);
+            // 腐蚀木乃伊: the whirlwind's grit is slime-corrosive —
+            // while a kid is caught in it their armour is melted
+            // to half (the same melt the slime's goo applies,
+            // refreshed every frame so it ends when they escape)
+            if (vx.melt) k.armorDownTimer = Math.max(k.armorDownTimer, 0.3);
+          }
         });
       }
       // skeleton bone piles: sit on the road until their bones are
@@ -3913,7 +4041,7 @@
         } else if (k.mode === 'knock') {
           knockers++;
           if (state.phase === 'playing') {
-            k.knockPhase += dt / 0.55;
+            k.knockPhase += dt / 0.70;
             if (k.knockPhase >= 1) {
               k.knockPhase = 0;
               state.knockCount++;
@@ -4663,14 +4791,89 @@
       scarecrow: [-42.6, -43.2, -43.2],
       zombie: [-40.6, -40.6, -40.6],
       werewolf: [-41.6, -41.6, -41.6],
-      slime: [-27.1, -33.0, -33.0]
+      slime: [-27.1, -33.0, -33.0],
+      /* hybrids wear their body parent's silhouette (see
+         drawHybrid), so they inherit its top too */
+      toxwitch: [-53.6, -55.2, -55.2],
+      arcghost: [-45.6, -45.6, -45.6],
+      corromummy: [-31.6, -31.6, -31.6]
     };
     /* throwQ: -1 = idle; 0..1 = progress of the candy-throw motion the
        monster plays each time its tower fires. The throw swings the
        monster's OWN right arm / paw / wand hand to (thx, thy) — each
        kind below draws that limb at the swung position while throwing,
        so it never grows a third arm on top of its two still ones. */
+    /* wizard-fusion hybrids are drawn by SPLICING the parents'
+       existing art — no new monster was drawn for them:
+       毒网魔女 is the witch's body with the spider's jointed legs
+       grafted on; 电弧幽灵 is Frankenstein's body gone ghost-
+       translucent with a sheet's wispy hem; 腐蚀木乃伊 is the
+       mummy with slime goo splashed and dripping over its
+       bandages. Each hybrid delegates its body to drawMonster
+       with the parent's kind, then paints its graft on top in
+       the same local space (same bob, same scale). */
+    function drawHybrid(kind, x, y, t, s, throwQ, lvl) {
+      var bobY = Math.sin(t * 2.2 + x) * 1.6;
+      if (kind === 'toxwitch') {
+        drawMonster('witch', x, y, t, s, throwQ, lvl);
+        ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.translate(0, bobY);
+        ctx.strokeStyle = '#33204e'; ctx.lineWidth = 3.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        var graftLegs = [
+          [9, -10, 20, -18, 26, -6],
+          [12, -6, 24, -10, 28, 0],
+          [12, -1, 24, -2, 28, 6],
+          [10, 3, 20, 4, 25, 10]
+        ];
+        [-1, 1].forEach(function (sd) {
+          graftLegs.forEach(function (L) {
+            ctx.beginPath();
+            ctx.moveTo(sd * L[0], L[1]);
+            ctx.lineTo(sd * L[2], L[3]);
+            ctx.lineTo(sd * L[4], L[5]);
+            ctx.stroke();
+          });
+        });
+        ctx.restore();
+        return;
+      }
+      if (kind === 'arcghost') {
+        ctx.save(); ctx.globalAlpha = 0.62;
+        drawMonster('franken', x, y, t, s, throwQ, lvl);
+        ctx.restore();
+        // the ghost parent's sheet: a translucent white hem with
+        // a wavy bottom edge, hanging off the body's lower half
+        ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.translate(0, bobY);
+        ctx.globalAlpha = 0.5;
+        var agv = ctx.createLinearGradient(0, -8, 0, 10);
+        agv.addColorStop(0, 'rgba(246,242,255,0)');
+        agv.addColorStop(1, 'rgba(246,242,255,.95)');
+        ctx.fillStyle = agv;
+        ctx.beginPath();
+        ctx.moveTo(-14, -6);
+        ctx.quadraticCurveTo(-15, 6, -10, 8);
+        ctx.lineTo(-6, 4.5); ctx.lineTo(-2, 8.5); ctx.lineTo(2, 4.5); ctx.lineTo(6, 8.5); ctx.lineTo(10, 4.5);
+        ctx.quadraticCurveTo(15, 6, 14, -6);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+        return;
+      }
+      // corromummy
+      drawMonster('mummy', x, y, t, s, throwQ, lvl);
+      ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.translate(0, bobY);
+      ctx.fillStyle = 'rgba(88,179,104,.85)';
+      circle(-6, -25, 3.1); ctx.fill(); circle(7.5, -12, 2.2); ctx.fill(); circle(-8.5, -4, 2.5); ctx.fill();
+      ctx.fillStyle = 'rgba(88,179,104,.9)';
+      ctx.beginPath(); ctx.ellipse(0, 5.5, 12.5, 3.6, 0, 0, 6.3); ctx.fill();
+      circle(3, 0.5, 2.7); ctx.fill(); circle(-3.5, -8, 1.9); ctx.fill();
+      // one long drip sliding down the bandages
+      ctx.fillRect(-1.1, -14, 2.2, 9);
+      circle(0, -4.5, 1.7); ctx.fill();
+      ctx.fillStyle = 'rgba(214,255,176,.8)';
+      circle(-6.8, -25.8, 1); ctx.fill(); circle(2.2, -0.3, 0.9); ctx.fill();
+      ctx.restore();
+    }
     function drawMonster(kind, x, y, t, s, throwQ, lvl) {
+      if (kind === 'toxwitch' || kind === 'arcghost' || kind === 'corromummy') { drawHybrid(kind, x, y, t, s, throwQ, lvl); return; }
       ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
       var bobY = Math.sin(t * 2.2 + x) * 1.6;
       ctx.translate(0, bobY);
@@ -5799,6 +6002,20 @@
             ctx.fillText('SUPER', site.x, sBy + 0.5);
             ctx.font = '800 11px "Baloo 2", sans-serif';
           }
+          // a wizard-fused hybrid wears a violet 融合 pill in the
+          // same spot (it is already maxed, like a SUPER, so the
+          // two pills and the LV UP! badge never overlap)
+          if (tw2 && tw2.fused) {
+            var fBy = sy - 17 + (reduceMotion ? 0 : Math.sin(t * 5 + site.x * 0.1) * 2.5);
+            ctx.fillStyle = '#7c3aed';
+            rr(site.x - 30, fBy - 10, 60, 20, 10); ctx.fill();
+            ctx.strokeStyle = 'rgba(199,146,255,.95)'; ctx.lineWidth = 2;
+            rr(site.x - 30, fBy - 10, 60, 20, 10); ctx.stroke();
+            ctx.font = '900 12px "Baloo 2", sans-serif';
+            ctx.fillStyle = '#f3e9ff';
+            ctx.fillText('融合', site.x, fBy + 0.5);
+            ctx.font = '800 11px "Baloo 2", sans-serif';
+          }
           // a banked pick puts the gold LV UP! badge back over
           // every tower below level 3 — tapping the badge (or
           // the tower) upgrades it on the spot, no picker. The
@@ -6684,11 +6901,12 @@
         ctx.font = '800 14px "Baloo 2", sans-serif'; ctx.textAlign = 'left';
         ctx.fillText('KNOCK ×' + state.knockCount, x + 28, y + 14);
       });
-      // points toward the next pick: every kid chased away by any
-      // tower adds 1; every 15 banks one PICK on the top-bar button
+      // the spendable points balance: banked picks x PICK_EVERY
+      // plus the points toward the next one — one pool for picks
+      // AND the shop, so this is the number both spend from
       pill(356, 5, 84, function (x, y) {
         ctx.fillStyle = '#ffd23e'; ctx.font = '800 13.5px "Baloo 2", sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('PTS ' + state.prog + '/' + PICK_EVERY, x + 9, y + 14);
+        ctx.fillText('PTS ' + (state.picks * PICK_EVERY + state.prog), x + 9, y + 14);
       });
       // house HP bar above the house — centred on the board and
       // wider than before, alone on its row. The frame pads the
@@ -7343,7 +7561,7 @@
     }
     function doFuse() {
       var tw = fuseTw, partner = fusePartner;
-      if (!tw || !partner || tw.level < 3 || partner.level < 3 || partner.super || state.towers.indexOf(partner) < 0) { closeFuse(); return; }
+      if (!tw || !partner || tw.level < 3 || partner.level < 3 || partner.super || tw.fused || partner.fused || state.towers.indexOf(partner) < 0) { closeFuse(); return; }
       // the tapped tower goes SUPER, with the grow-up fanfare
       tw.super = true;
       tw.growFrom = LVL_SCALE[tw.level - 1];
@@ -7371,6 +7589,265 @@
       closeFuse();
       syncHUD(true);
     }
+    /* ---------------- wizard fusion ----------------
+       Two DIFFERENT Lv3 towers fuse into one hybrid (see
+       WIZARD_FUSIONS): tap a Lv3 tower whose fusion partner is
+       also standing at Lv3 and a confirm popup offers the fuse.
+       The tapped tower becomes the hybrid on its own gravestone;
+       the partner is consumed and its gravestone stands empty
+       again. Free — no pick spent. A hybrid (tw.fused) can never
+       fuse again, and neither can a SUPER tower take part. */
+    var wizTw = null, wizPartner = null, wizDef = null;
+    function findWizardPartner(tw) {
+      if (!tw || tw.level < 3 || tw.super || tw.fused) return null;
+      var res = null, bestD = Infinity;
+      state.towers.forEach(function (o) {
+        if (o === tw || o.level < 3 || o.super || o.fused) return;
+        var d = wizardDefFor(tw.kind, o.kind);
+        if (!d) return;
+        var dist = Math.hypot(o.x - tw.x, o.y - tw.y);
+        if (dist < bestD) { bestD = dist; res = { partner: o, def: d }; }
+      });
+      return res;
+    }
+    function openWizard(tw, res) {
+      wizTw = tw; wizPartner = res.partner; wizDef = res.def;
+      state.choosing = true;
+      var ws = document.getElementById('wizardSub');
+      if (ws) ws.textContent = TOWER_DEFS[tw.kind].nm + ' ＋ ' + TOWER_DEFS[res.partner.kind].nm + ' ＝ ' + res.def.nm + '！杂交怪占一个墓碑，另一座的墓碑空出来；两个大招都保留，效果 ×1.2。免费，不花 pick。';
+      var we = document.getElementById('wizardChoice');
+      if (we) { we.classList.add('show'); we.setAttribute('aria-hidden', 'false'); }
+      if (soundOn) { ensureAudio(); happySound(); }
+      syncHUD(true);
+    }
+    function closeWizard() {
+      wizTw = null; wizPartner = null; wizDef = null;
+      state.choosing = false;
+      var we = document.getElementById('wizardChoice');
+      if (we) { we.classList.remove('show'); we.setAttribute('aria-hidden', 'true'); }
+    }
+    function doWizardFuse() {
+      var tw = wizTw, partner = wizPartner, def = wizDef;
+      if (!tw || !partner || !def || tw.level < 3 || partner.level < 3 || tw.super || partner.super || tw.fused || partner.fused ||
+          state.towers.indexOf(tw) < 0 || state.towers.indexOf(partner) < 0) { closeWizard(); return; }
+      var nd = TOWER_DEFS[def.kind];
+      // the tapped tower becomes the hybrid: new body, new numbers
+      // (already the fusion rulebook values in TOWER_DEFS), the
+      // better of the two wave bonuses, both towers' kill credit
+      tw.kind = def.kind;
+      tw.proj = nd.proj; tw.dmg = nd.dmg; tw.rate = nd.rate; tw.range = nd.range;
+      tw.fused = true;
+      tw.waveBonus = Math.max(twWaveBonus(tw), twWaveBonus(partner));
+      tw.kills += partner.kills;
+      tw.cd = 0.35; tw.netCd = 0; tw.miniCd = 0;
+      tw.growFrom = LVL_SCALE[2] * 0.85;
+      tw.growT = 0;
+      tw.flashT = 0.55;
+      // its gravestone now grows the hybrid's body
+      SITES.forEach(function (s) { if (s.tower === tw) s.kind = def.kind; });
+      // the partner is consumed: its tower leaves the field and
+      // its gravestone stands empty again for a new monster
+      var pi = state.towers.indexOf(partner);
+      if (pi >= 0) state.towers.splice(pi, 1);
+      SITES.forEach(function (s) {
+        if (s.tower === partner) {
+          s.tower = null; s.kind = null; s.phase = 'empty'; s.anim = 0;
+          s.shakeAge = -1; s.shakeIn = 2 + Math.random() * 4;
+        }
+      });
+      state.projs = state.projs.filter(function (p) { return p.src !== partner; });
+      state.vortexes = state.vortexes.filter(function (vx) { return vx.src !== partner; });
+      state.crows = state.crows.filter(function (cr) { return cr.src !== partner; });
+      state.miniGhosts = state.miniGhosts.filter(function (mg) { return mg.src !== partner; });
+      levelUpSound();
+      addFloat(tw.x, tw.y - 78, def.nm + '!', '#c792ff', 22);
+      closeWizard();
+      syncHUD(true);
+    }
+    /* wizard popup buttons: 融合 runs the fusion, Later closes the
+       popup and keeps both towers (nothing is spent either way) */
+    document.getElementById('btnWizardDo').addEventListener('click', function () { if (wizTw && wizPartner) doWizardFuse(); });
+    document.getElementById('btnWizardCancel').addEventListener('click', function () { if (wizTw) closeWizard(); });
+
+    /* ---------------- shop ----------------
+       One points pool for picks AND the shop: the balance is
+       picks x PICK_EVERY + prog (see the HUD pill). spendPoints
+       pays out of it — prog first in effect, since the balance is
+       simply re-split afterwards — so a 20-point tower bought at
+       a balance of 24 really does cost the player a banked pick.
+       Opening the shop freezes the game (state.choosing, the same
+       freeze every popup uses), so it can be opened mid-wave or
+       in a wave break alike. */
+    var shopOpen = false;
+    function pointsBalance() { return state.picks * PICK_EVERY + state.prog; }
+    function spendPoints(cost) {
+      var bal = pointsBalance();
+      if (bal < cost) return false;
+      var nb = bal - cost;
+      state.picks = Math.floor(nb / PICK_EVERY);
+      state.prog = nb % PICK_EVERY;
+      syncHUD(true);
+      return true;
+    }
+    /* the six towers this game does NOT field (the rotation's
+       bench): endless fields all twelve, so its bench is empty */
+    function shopOffPool() {
+      var roster = runMode === 'endless' ? ROSTER_POOL.slice() : rosterKinds();
+      return ROSTER_POOL.filter(function (k) { return roster.indexOf(k) < 0; });
+    }
+    /* three of the bench, on a rotating window that advances one
+       seat per wave, so the shelf changes every wave and every
+       benched tower comes round */
+    function shopStock() {
+      var off = shopOffPool();
+      if (off.length <= 3) return off.slice();
+      var start = (state.wave - 1) % off.length;
+      var out = [];
+      for (var i = 0; i < 3; i++) out.push(off[(start + i) % off.length]);
+      return out;
+    }
+    function refreshShopStock() {
+      if (state.shopStockWave !== state.wave) {
+        state.shopStockWave = state.wave;
+        state.shopBought = {};
+      }
+    }
+    function renderShop() {
+      var pts = document.getElementById('shopPts');
+      if (pts) pts.textContent = '积分 ' + pointsBalance() + '（和 pick 同一个池子：12 分 = 1 个 pick，花积分会少 pick）';
+      var grid = document.getElementById('shopStock');
+      if (grid) {
+        grid.innerHTML = '';
+        var off = shopOffPool();
+        if (!off.length) {
+          grid.innerHTML = '<div class="shop-note" style="grid-column:1/-1">本局十二座塔全员到齐，没有池外塔可买。</div>';
+        } else {
+          var bal = pointsBalance();
+          var emptySite = hasEmptySite();
+          shopStock().forEach(function (kind) {
+            var bought = !!state.shopBought[kind];
+            var d = document.createElement('button');
+            d.type = 'button';
+            d.className = 'card' + ((bought || bal < SHOP_TOWER_COST || !emptySite) ? ' cant' : '');
+            d.innerHTML = miniSVG[kind] + '<div class="nm">' + TOWER_DEFS[kind].nm + '</div>' +
+              '<div class="cost"><i></i>' + (bought ? '本波已售出' : SHOP_TOWER_COST + ' 积分') + '</div>';
+            if (bought || bal < SHOP_TOWER_COST || !emptySite) d.disabled = true;
+            d.addEventListener('click', function () { buyShopTower(kind); });
+            grid.appendChild(d);
+          });
+          if (!emptySite) {
+            var note = document.createElement('div');
+            note.className = 'shop-note';
+            note.style.gridColumn = '1 / -1';
+            note.textContent = '没有空墓碑了 — 先融合或等墓碑空出来再买塔。';
+            grid.appendChild(note);
+          }
+        }
+      }
+      var rep = document.getElementById('btnShopRepair');
+      if (rep) {
+        rep.disabled = pointsBalance() < SHOP_REPAIR_COST || state.houseHP >= HOUSE_MAX;
+        var rs = document.getElementById('shopRepairSub');
+        if (rs) rs.textContent = '回 ' + SHOP_REPAIR_HP + ' 点血 · 城堡 ' + Math.ceil(state.houseHP) + '/' + HOUSE_MAX;
+      }
+      var ref = document.getElementById('btnShopRefresh');
+      if (ref) ref.disabled = pointsBalance() < SHOP_REFRESH_COST || (state.bombCd <= 0 && state.screamCd <= 0 && state.rainCd <= 0);
+    }
+    function openShop() {
+      if (shopOpen) return;
+      // any time during a run — mid-wave, wave break, even while
+      // the player has paused with the top button: the shop's own
+      // freeze (state.choosing) is what pauses the game
+      if (!started || state.phase !== 'playing' || state.choosing || state.pendingKind) return;
+      shopOpen = true;
+      state.choosing = true; // the popup freeze: opening the shop pauses the game
+      state.bombArmed = false;
+      state.rainArmed = false;
+      refreshShopStock();
+      renderShop();
+      var sp = document.getElementById('shopPanel');
+      if (sp) { sp.classList.add('show'); sp.setAttribute('aria-hidden', 'false'); }
+      if (soundOn) { ensureAudio(); happySound(); }
+      syncHUD(true);
+    }
+    function closeShop() {
+      if (!shopOpen) return;
+      shopOpen = false;
+      state.choosing = false;
+      var sp = document.getElementById('shopPanel');
+      if (sp) { sp.classList.remove('show'); sp.setAttribute('aria-hidden', 'true'); }
+      syncHUD(true);
+    }
+    function buyShopTower(kind) {
+      if (!shopOpen || state.shopBought[kind]) return;
+      if (!hasEmptySite()) { renderShop(); return; }
+      if (!spendPoints(SHOP_TOWER_COST)) { renderShop(); return; }
+      state.shopBought[kind] = true;
+      // the bought tower waits for a gravestone tap, exactly like
+      // the free first tower — placement itself spends nothing more
+      closeShop();
+      state.pendingKind = kind;
+      state.pickMode = 'shop';
+      addFloat(225, 120, TOWER_DEFS[kind].nm + ' — 点一个墓碑放置！', '#ffd23e', 16);
+      if (soundOn) popSound();
+      syncHUD(true);
+    }
+    document.getElementById('btnShopClose').addEventListener('click', closeShop);
+    document.getElementById('btnShopRepair').addEventListener('click', function () {
+      if (!shopOpen) return;
+      if (state.houseHP >= HOUSE_MAX) { renderShop(); return; }
+      if (!spendPoints(SHOP_REPAIR_COST)) { renderShop(); return; }
+      state.houseHP = Math.min(HOUSE_MAX, state.houseHP + SHOP_REPAIR_HP);
+      addFloat(225, 200, '+' + SHOP_REPAIR_HP + ' HP', '#7ee06f', 16);
+      if (soundOn) happySound();
+      renderShop();
+      syncHUD(true);
+    });
+    document.getElementById('btnShopRefresh').addEventListener('click', function () {
+      if (!shopOpen) return;
+      if (state.bombCd <= 0 && state.screamCd <= 0 && state.rainCd <= 0) { renderShop(); return; }
+      if (!spendPoints(SHOP_REFRESH_COST)) { renderShop(); return; }
+      state.bombCd = 0; state.screamCd = 0; state.rainCd = 0;
+      addFloat(225, 120, '技能全刷新！', '#ffd23e', 16);
+      if (soundOn) levelUpSound();
+      renderShop();
+      syncHUD(true);
+    });
+    /* the top-bar shop button: locked (dimmed, with the unlock
+       price on it) until the balance first reaches SHOP_UNLOCK;
+       after that it shows the live balance and opens the shop.
+       updateShopBtn runs every frame from the main loop, which is
+       also what catches the unlock the moment any kill path —
+       tower, bomb, rain, cannon — pushes the balance over 20. */
+    var btnShop = document.getElementById('btnShop');
+    var btnShopTxt = document.getElementById('btnShopTxt');
+    var lastShopLabel = null;
+    function updateShopBtn() {
+      if (!btnShop || !state) return;
+      if (!state.shopUnlocked && pointsBalance() >= SHOP_UNLOCK) {
+        state.shopUnlocked = true;
+        if (started && state.phase === 'playing') {
+          addFloat(225, 90, '商店解锁！', '#ffd23e', 17);
+          if (soundOn) levelUpSound();
+        }
+      }
+      var label = state.shopUnlocked ? ('商店·' + pointsBalance()) : ('商店·' + SHOP_UNLOCK);
+      if (label !== lastShopLabel) {
+        lastShopLabel = label;
+        if (btnShopTxt) btnShopTxt.textContent = label;
+        btnShop.classList.toggle('locked', !state.shopUnlocked);
+      }
+    }
+    if (btnShop) btnShop.addEventListener('click', function () {
+      ensureAudio();
+      if (!state.shopUnlocked) {
+        if (started && playing && state.phase === 'playing') {
+          addFloat(225, 90, '商店：攒满 ' + SHOP_UNLOCK + ' 积分解锁（现在 ' + pointsBalance() + ' 分）', '#ff9a8a', 13.5);
+        }
+        return;
+      }
+      if (shopOpen) closeShop(); else openShop();
+    });
     /* ---------------- controls & loop ---------------- */
     var btnPlay = document.getElementById('btnPlay');
     var btnPlayTxt = document.getElementById('btnPlayTxt');
@@ -7569,6 +8046,8 @@
       // a fuse popup left open is closed on restart (its towers
       // no longer exist after resetGame rebuilds the field)
       closeFuse();
+      closeWizard();
+      closeShop();
       // a restart before any mode was ever picked (top Restart
       // tapped before a mode is chosen) asks for the mode first
       // instead of starting a modeless run
@@ -7668,6 +8147,7 @@
     canvas.addEventListener('pointerdown', function (e) {
       ensureAudio();
       if (!started || !playing || state.phase !== 'playing') return;
+      if (shopOpen) return; // the shop is up (and the game paused): field taps belong to it
       var r = canvas.getBoundingClientRect();
       var x = (e.clientX - r.left) / r.width * W;
       var y = (e.clientY - r.top) / r.height * H;
@@ -7714,16 +8194,24 @@
       });
       if (tappedTw) {
         if (tappedTw.level >= 3) {
+          // a wizard-fused hybrid is already fused: nothing more to do
+          if (tappedTw.fused) { addFloat(tappedTw.x, tappedTw.y - 62, '融合 \u2605\u2605\u2605', '#c792ff', 14); }
           // a SUPER tower is already fused: nothing more to do
-          if (tappedTw.super) { addFloat(tappedTw.x, tappedTw.y - 62, 'SUPER \u2605\u2605\u2605', '#ff6a3d', 14); }
-          // two identical Lv3 towers fuse into one SUPER tower
-          // (free — no pick spent); a Lv3 with no twin stays MAX.
-          // Only offered in plain play: never while a picker or a
-          // picked card is in flight (those taps belong to it)
+          else if (tappedTw.super) { addFloat(tappedTw.x, tappedTw.y - 62, 'SUPER \u2605\u2605\u2605', '#ff6a3d', 14); }
+          // wizard fusion first: two DIFFERENT Lv3 towers fuse
+          // into a hybrid (free — no pick spent). Failing that,
+          // two identical Lv3 towers fuse into one SUPER tower;
+          // a Lv3 with neither partner stays MAX. Only offered in
+          // plain play: never while a picker or a picked card is
+          // in flight (those taps belong to it)
           else {
-            var fuseMate = (!state.choosing && !state.pendingKind) ? findFusePartner(tappedTw) : null;
-            if (fuseMate) openFuse(tappedTw, fuseMate);
-            else addFloat(tappedTw.x, tappedTw.y - 62, 'Lv 3 MAX \u2605\u2605\u2605', '#ffd23e', 14);
+            var wizMate = (!state.choosing && !state.pendingKind) ? findWizardPartner(tappedTw) : null;
+            if (wizMate) openWizard(tappedTw, wizMate);
+            else {
+              var fuseMate = (!state.choosing && !state.pendingKind) ? findFusePartner(tappedTw) : null;
+              if (fuseMate) openFuse(tappedTw, fuseMate);
+              else addFloat(tappedTw.x, tappedTw.y - 62, 'Lv 3 MAX \u2605\u2605\u2605', '#ffd23e', 14);
+            }
           }
         }
         else if (pickCueActive()) doUpgrade(tappedTw);
@@ -8027,6 +8515,7 @@
       updateBombBtn();
       updateScreamBtn();
       updateRainBtn();
+      updateShopBtn();
     }
     requestAnimationFrame(loop);
 
