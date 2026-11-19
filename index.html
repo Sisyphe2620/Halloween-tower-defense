@@ -114,6 +114,17 @@
         flex: 1 1 0;
         justify-content: center;
       }
+      /* five buttons now share the bar (the shop button joined
+         Pause/Restart/Sound/Speed): on narrow phones their natural
+         label widths sum past the screen and the last button would
+         slide off the edge, so the whole bar compacts a step —
+         smaller labels, tighter padding — and no button may force
+         the row wider than the screen */
+      @media (max-width: 480px) {
+        .controls { gap: 4px; }
+        .controls .btn { font-size: 12px; padding: 9px 3px; gap: 3px; min-width: 0; }
+        .controls .btn svg { width: 13px; height: 13px; }
+      }
       .btn {
         appearance: none;
         border: 2px solid var(--panel-line);
@@ -621,6 +632,39 @@
       .choice-close { margin-top: 10px; }
       /* fuse popup: same floating panel as the picker, two stacked buttons */
       #fuseChoice .btn { display: block; margin: 10px auto 0; min-width: 200px; text-align: center; }
+      /* wizard fusion popup: same treatment as the SUPER fuse popup */
+      #wizardChoice .btn { display: block; margin: 10px auto 0; min-width: 200px; text-align: center; }
+      /* ---------- shop button (top bar): locked until 20 points ---------- */
+      #btnShop.locked { opacity: .55; }
+      #btnShop:not(.locked) { border-color: var(--accent); color: #ffd23e; }
+      /* ---------- shop panel: a real panel (unlike the floating
+         pickers) because it carries three sections of stock ---------- */
+      .shop {
+        background: rgba(24, 14, 54, .97);
+        border: 2px solid var(--accent);
+        border-radius: 18px;
+        padding: 14px 14px 12px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, .55);
+        max-height: 92%;
+        overflow-y: auto;
+      }
+      .shop .choice-t { text-shadow: none; margin-bottom: 4px; }
+      .shop-sec {
+        font-size: 12.5px; font-weight: 800; color: var(--ink);
+        text-align: left; margin: 10px 2px 6px;
+      }
+      .shop-sec span { color: var(--ink-dim); font-weight: 600; }
+      .shop-rows { display: flex; flex-direction: column; gap: 7px; margin-top: 2px; }
+      .shop-row {
+        width: 100%;
+        justify-content: space-between;
+        border-radius: 13px;
+        padding: 10px 12px;
+        font-size: 13.5px;
+      }
+      .shop-row .shop-row-sub { color: var(--ink-dim); font-weight: 600; font-size: 12px; }
+      .shop-row:disabled { opacity: .48; }
+      .shop-note { font-size: 12px; color: var(--ink-dim); line-height: 1.5; padding: 4px 2px 2px; text-align: left; }
       /* ---------- mode choice popup (the first thing the player
          sees, after the loading screen — the start page is retired):
          the supplied poster art (assets/mode-select.webp) IS the
@@ -1498,6 +1542,62 @@
         color: var(--ink-dim);
         animation: hintBlink 1.8s ease-in-out infinite;
       }
+      /* ---------- update pill (2026-11-18 shop + fusion release):
+         the shop and fusion features only appear deep into a run
+         (shop unlocks at 20 points, fusion needs two Lv3 towers),
+         and the top bar — the one place the shop button lives —
+         is hidden while the mode poster is open, so a player who
+         just opens the link saw literally nothing new and reported
+         "no change". This pill names the update on the very first
+         screen, and its twin sits at the bottom of the mode
+         poster (.mode-update below), so the new version is visible
+         before the first tap. ---------- */
+      .pre-update {
+        display: inline-block;
+        margin: 22px 0 0;
+        padding: 8px 14px;
+        border: 2px solid var(--accent);
+        border-radius: 999px;
+        background: rgba(29, 20, 66, .85);
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.45;
+      }
+      .pre-update .new-tag {
+        color: #ffd23e;
+        font-weight: 900;
+        letter-spacing: .08em;
+        margin-right: 6px;
+      }
+      .mode-update {
+        position: absolute;
+        left: 50%;
+        bottom: max(14px, env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        z-index: 4;
+        pointer-events: none;
+        white-space: nowrap;
+        max-width: 94%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        padding: 8px 14px;
+        border: 2px solid var(--accent);
+        border-radius: 999px;
+        background: rgba(24, 14, 54, .92);
+        color: var(--ink);
+        font-family: "Baloo 2", system-ui, sans-serif;
+        font-size: clamp(11px, 3vw, 13px);
+        font-weight: 700;
+        line-height: 1.4;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, .5);
+      }
+      .mode-update .new-tag {
+        color: #ffd23e;
+        font-weight: 900;
+        letter-spacing: .08em;
+        margin-right: 6px;
+      }
       @keyframes hintBlink {
         0%, 100% { opacity: .45; }
         50% { opacity: 1; }
@@ -1712,6 +1812,7 @@
         <div class="pre-moon" aria-hidden="true"></div>
         <h1 class="pre-title"><span class="l1">TRICK OR</span><span class="l2">TREATERS!</span></h1>
         <p class="pre-hint" id="preHint">TAP ANYWHERE TO CONTINUE</p>
+        <p class="pre-update"><span class="new-tag">NEW</span>商店 + 融合已上线 · 11月18日更新</p>
       </div>
     </div>
     <script>
@@ -2109,6 +2210,9 @@
           Sound
         </button>
         <button class="btn" id="btnSpeed" type="button">1× Speed</button>
+        <button class="btn locked" id="btnShop" type="button" aria-label="商店：攒满 20 积分解锁">
+          <span id="btnShopTxt">商店·20</span>
+        </button>
       </div>
       <script>
         /* speed button first-entry hint: the moment the player
@@ -2186,6 +2290,24 @@
           <button class="btn primary" id="btnFuseDo" type="button">融合 SUPER</button>
           <button class="btn choice-close" id="btnFuseCancel" type="button">Later</button>
         </div>
+        <div class="choice" id="wizardChoice" aria-hidden="true">
+          <div class="choice-t">巫师融合</div>
+          <div class="choice-sub" id="wizardSub">Fuse two different Lv3 towers into one hybrid!</div>
+          <button class="btn primary" id="btnWizardDo" type="button">融合！</button>
+          <button class="btn choice-close" id="btnWizardCancel" type="button">Later</button>
+        </div>
+        <div class="choice shop" id="shopPanel" aria-hidden="true">
+          <div class="choice-t">商店</div>
+          <div class="choice-sub" id="shopPts" style="display:block">积分 0</div>
+          <div class="shop-sec">池外塔 <span>· 每波上架 3 座轮换 · 买下后点墓碑放置</span></div>
+          <div class="choice-grid" id="shopStock"></div>
+          <div class="shop-sec">补给</div>
+          <div class="shop-rows">
+            <button class="btn shop-row" id="btnShopRepair" type="button"><span>修城堡 · 15 积分</span><span class="shop-row-sub" id="shopRepairSub">回 30 点血</span></button>
+            <button class="btn shop-row" id="btnShopRefresh" type="button"><span>技能刷新 · 10 积分</span><span class="shop-row-sub">三个技能立刻就绪</span></button>
+          </div>
+          <button class="btn choice-close" id="btnShopClose" type="button">关闭</button>
+        </div>
         <div class="battlereport" id="battleReport" aria-hidden="true" role="dialog" aria-label="Defeat report">
           <div class="br-card">
             <img class="br-art" src="assets/defeat-report.webp" width="1086" height="1448" decoding="async" alt="" />
@@ -2220,6 +2342,12 @@
 
       </div>
 
+      <div class="howto">
+        <b>11月18日更新 · 商店 + 融合</b><br />
+        <b>商店：</b>积分攒满 20 分，顶栏的「商店」按钮整局解锁。池外塔 20 分一座（每波上架 3 座轮换，买下后点墓碑放置）、修城堡 15 分回 30 点血、技能刷新 10 分让三个技能立刻就绪。商店和抽卡共用同一池积分，点开商店时游戏会暂停。<br />
+        <b>融合：</b>两座相同的 Lv3 塔可免费融合成 SUPER；另有三组异塔配方 — 女巫 + 蜘蛛 → 毒网魔女、弗兰肯 + 幽灵 → 电弧幽灵、木乃伊 + 史莱姆 → 腐蚀木乃伊。点一座 Lv3 塔就会弹出融合确认，融合后只占一个墓碑，另一个空出来。
+      </div>
+
     </main>
 
     <!-- mode choice popup lives at body level, not inside .stage:
@@ -2233,6 +2361,7 @@
         <div class="dracula-bubble" role="note" aria-label="Count Dracula says: I despise those pesky trick-or-treaters! Minions, keep them away from my castle!"><svg class="bubble-shape" viewBox="0 0 310 104" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M 17 2 H 283 Q 298 2 298 17 V 58 L 308.5 70.5 Q 310 72 308.5 73.5 L 298 86 V 87 Q 298 102 283 102 H 17 Q 2 102 2 87 V 17 Q 2 2 17 2 Z" fill="rgba(255, 246, 224, .78)" stroke="#2b1050" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg><span class="w" style="--d:.55s">I</span> <span class="w" style="--d:.62s">despise</span> <span class="w" style="--d:.69s">those</span> <span class="w" style="--d:.76s">pesky</span> <span class="w" style="--d:.83s">trick-or-treaters!</span> <span class="w" style="--d:.97s">Minions,</span> <span class="w" style="--d:1.04s">keep</span> <span class="w" style="--d:1.11s">them</span> <span class="w" style="--d:1.18s">away</span> <span class="w" style="--d:1.25s">from</span> <span class="w" style="--d:1.32s">my</span> <span class="w" style="--d:1.39s">castle!</span></div>
         <button class="mode-hot mode-hot-challenge" id="btnModeChallenge" type="button" aria-label="闯关模式：10 waves, hold the castle, then victory"><span class="mode-hot-t">闯关模式</span><span class="mode-hot-s">10 waves — hold the castle, then victory!</span></button>
         <button class="mode-hot mode-hot-endless" id="btnModeEndless" type="button" aria-label="无限流模式：endless waves, how long can you last"><span class="mode-hot-t">无限流模式</span><span class="mode-hot-s">Endless waves — how long can you last?</span></button>
+        <div class="mode-update" aria-hidden="true"><span class="new-tag">NEW</span>商店 + 融合上线：攒满 20 分开商店 · 两座 Lv3 可融合</div>
       </div>
     </div>
 
@@ -2304,10 +2433,17 @@
           attempts++;
           var s = document.createElement('script');
           curScript = s;
-          /* retries carry a cache-busting query: the failure being
-             recovered from may BE a poisoned cache entry, and a
-             plain re-request would just be served the same corpse */
-          s.src = 'assets/game.js' + (attempts > 1 ? '?retry=' + (attempts - 1) : '');
+          /* EVERY load carries the engine version as a query: the
+             first attempt used to go out bare, so a browser that
+             had cached an older game.js (e.g. from before the
+             2026-11-18 shop + fusion release) could keep serving
+             that old engine under the new page — the game looked
+             completely unchanged. Bump ENGINE_VER on every engine
+             release. Retries add a further cache-busting query:
+             the failure being recovered from may BE a poisoned
+             cache entry, and a plain re-request would just be
+             served the same corpse */
+          s.src = 'assets/game.js?v=20261118-shop-fusion' + (attempts > 1 ? '&retry=' + (attempts - 1) : '');
           s.async = true;
           /* the loading bar's game-code stage: filled when the file
              has actually downloaded and run (script load event) */
