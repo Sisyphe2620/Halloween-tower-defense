@@ -1769,37 +1769,56 @@
                bright orange behind them as the loading advances -->
           <rect x="4" y="94" width="288" height="13" rx="6.5" fill="#59331a" />
           <rect id="bootRoadFill" x="4" y="94" width="0" height="13" rx="6.5" fill="url(#bootRoadGrad)" />
-          <!-- the castle at the end of the path -->
+          <!-- the castle at the end of the path: a WIDE base wall
+               (x 264–336) with a central keep rising from it and a
+               turret at each corner, centred on the door at x 300.
+               The old castle was 52 wide against 95 tall — a skinny
+               sliver squeezed against the right edge, its side
+               towers 11px sticks and its purple roofs lost against
+               the purple sky. The new silhouette is ~78 wide
+               (roof overhangs included) against ~95 tall, the roofs
+               overhang their walls by 3–4px on every side, wear a
+               bright lavender rim (stroke-width 2) and a lighter
+               violet fill, and sit in front of a soft moon halo so
+               the roofline reads at a glance. The road still ends
+               exactly at the door (x 292), and the queue's final
+               stop moved with the door (leader at x 288, see the
+               boot-progress script) so the knock still lands on it -->
           <g>
-            <polygon points="286,52 293.5,36 301,52" fill="#5a3fa8" stroke="#a78bfa" stroke-width="1.6" stroke-linejoin="round" />
-            <polygon points="325,52 332.5,36 340,52" fill="#5a3fa8" stroke="#a78bfa" stroke-width="1.6" stroke-linejoin="round" />
-            <polygon points="292,40 314,14 336,40" fill="#5a3fa8" stroke="#a78bfa" stroke-width="1.6" stroke-linejoin="round" />
-            <circle cx="293.5" cy="35" r="1.9" fill="#ffd23e" />
-            <circle cx="332.5" cy="35" r="1.9" fill="#ffd23e" />
-            <circle cx="314" cy="12.6" r="2.2" fill="#ffd23e" />
-            <rect x="288" y="52" width="11" height="55" fill="#2a1c55" stroke="#4b3585" stroke-width="1.6" />
-            <rect x="327" y="52" width="11" height="55" fill="#2a1c55" stroke="#4b3585" stroke-width="1.6" />
-            <rect x="294" y="40" width="40" height="67" fill="#2a1c55" stroke="#4b3585" stroke-width="1.6" />
-            <rect x="300" y="50" width="6" height="9" rx="2" fill="#ffd23e" />
-            <rect x="322" y="50" width="6" height="9" rx="2" fill="#ffd23e" />
-            <circle cx="293.5" cy="62" r="2.2" fill="#ffd23e" />
-            <circle cx="332.5" cy="62" r="2.2" fill="#ffd23e" />
+            <circle cx="300" cy="34" r="30" fill="#ffc95e" opacity=".13" />
+            <rect x="264" y="66" width="72" height="41" fill="#2a1c55" stroke="#6b54b8" stroke-width="1.8" />
+            <rect x="282" y="38" width="36" height="69" fill="#2a1c55" stroke="#6b54b8" stroke-width="1.8" />
+            <rect x="264" y="54" width="15" height="53" fill="#2a1c55" stroke="#6b54b8" stroke-width="1.8" />
+            <rect x="321" y="54" width="15" height="53" fill="#2a1c55" stroke="#6b54b8" stroke-width="1.8" />
+            <polygon points="261,54 271.5,35 282,54" fill="#6d4fc2" stroke="#c9b8ff" stroke-width="2" stroke-linejoin="round" />
+            <polygon points="318,54 328.5,35 339,54" fill="#6d4fc2" stroke="#c9b8ff" stroke-width="2" stroke-linejoin="round" />
+            <polygon points="278,38 300,11 322,38" fill="#6d4fc2" stroke="#c9b8ff" stroke-width="2" stroke-linejoin="round" />
+            <path d="M300 11 L286 35" stroke="#a78bfa" stroke-width="1.6" stroke-linecap="round" fill="none" />
+            <circle cx="271.5" cy="33.4" r="2.5" fill="#ffd23e" stroke="#b97f06" stroke-width="1" />
+            <circle cx="328.5" cy="33.4" r="2.5" fill="#ffd23e" stroke="#b97f06" stroke-width="1" />
+            <circle cx="300" cy="9.2" r="2.8" fill="#ffd23e" stroke="#b97f06" stroke-width="1" />
+            <rect x="288" y="49" width="6.5" height="9.5" rx="2" fill="#ffd23e" />
+            <rect x="305.5" y="49" width="6.5" height="9.5" rx="2" fill="#ffd23e" />
+            <circle cx="271.5" cy="63" r="2.4" fill="#ffd23e" />
+            <circle cx="328.5" cy="63" r="2.4" fill="#ffd23e" />
             <g class="castle-door">
-              <path d="M306 107 L306 84 Q306 76 314 76 Q322 76 322 84 L322 107 Z" fill="#ff9f2e" stroke="#7a3c00" stroke-width="1.6" />
-              <circle cx="318.5" cy="93" r="1.8" fill="#7a3c00" />
+              <path d="M292 107 L292 84 Q292 76 300 76 Q308 76 308 84 L308 107 Z" fill="#ff9f2e" stroke="#7a3c00" stroke-width="1.6" />
+              <circle cx="304.5" cy="93" r="1.8" fill="#7a3c00" />
             </g>
-            <circle cx="300" cy="103" r="4" fill="#ff8a1e" />
-            <rect x="299" y="97.5" width="2" height="3" fill="#3f9e4d" />
+            <circle cx="285" cy="103" r="4" fill="#ff8a1e" />
+            <rect x="284" y="97.5" width="2" height="3" fill="#3f9e4d" />
+            <circle cx="315" cy="103" r="4" fill="#ff8a1e" />
+            <rect x="314" y="97.5" width="2" height="3" fill="#3f9e4d" />
           </g>
           <!-- the knock burst: hidden until the queue arrives -->
           <g class="knock-fx">
-            <text x="282" y="34" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-size="14" font-weight="800" fill="#ffd23e" stroke="#2b1050" stroke-width="3" paint-order="stroke" letter-spacing="1">KNOCK!</text>
-            <path d="M296 62 l-6 -5 M300 58 l-3 -7 M306 57 l0 -8" stroke="#ffd23e" stroke-width="2.2" stroke-linecap="round" fill="none" />
+            <text x="248" y="24" text-anchor="middle" font-family="'Baloo 2',sans-serif" font-size="14" font-weight="800" fill="#ffd23e" stroke="#2b1050" stroke-width="3" paint-order="stroke" letter-spacing="1">KNOCK!</text>
+            <path d="M290 70 l-7 -4 M292 66 l-4 -7 M297 64 l-1 -8" stroke="#ffd23e" stroke-width="2.2" stroke-linecap="round" fill="none" />
           </g>
           <!-- the trick-or-treat queue: skeleton, pumpkin, witch,
                and the ghost leader who does the knocking. The
                script slides this whole group along the path -->
-          <g id="bootKids" transform="translate(96,0)">
+          <g id="bootKids" transform="translate(88,0)">
             <g transform="translate(-81,0)"><g class="kid-bob" style="animation-delay:-.36s">
               <rect x="-6" y="84" width="12" height="20" rx="4" fill="#221a35" />
               <path d="M-3.5 89.5 h7 M-3.5 94.5 h7 M-3.5 99.5 h7" stroke="#f4efff" stroke-width="1.5" opacity=".85" />
@@ -1872,12 +1891,13 @@
         }
         function render() {
           /* the kids queue IS the bar: the walked part of the path
-             lights up orange (288 units end to end) and the queue
-             slides from the path's start (leader at x 96) to the
-             castle door (leader at x 296) with the same eased
-             percentage the number shows */
+             lights up orange (288 units end to end, finishing at
+             the castle door's left edge) and the queue slides from
+             the path's start (leader at x 88) to the castle door
+             (leader at x 288, hand on the door at x 300) with the
+             same eased percentage the number shows */
           if (road) road.setAttribute('width', (shown * 2.88).toFixed(1));
-          if (kids) kids.setAttribute('transform', 'translate(' + (96 + shown * 2) + ',0)');
+          if (kids) kids.setAttribute('transform', 'translate(' + (88 + shown * 2) + ',0)');
           pctEl.textContent = Math.floor(shown) + '%';
           stageEl.textContent = label();
         }
